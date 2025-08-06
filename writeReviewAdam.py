@@ -54,7 +54,7 @@ def get_selected_casino_data():
     creds = get_service_account_credentials()
     sheets = build("sheets", "v4", credentials=creds)
     casino = sheets.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_NAME}!B1").execute().get("values", [[""]])[0][0].strip()
-    rows = sheets.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_NAME}!B2:R").execute().get("values", [])
+    rows = sheets.spreadsheets().values().get(spreadsheetId=SPREADSHEET_ID, range=f"{SHEET_NAME}!B2:S").execute().get("values", [])
     sections = {
         "General": (2, 3, 4),
         "Payments": (5, 6, 7),
@@ -63,6 +63,11 @@ def get_selected_casino_data():
         "Bonuses": (14, 15, 16),
     }
     data = {}
+    comments_column = 17  # Column S (0-indexed)
+    
+    # Extract comments from column S
+    all_comments = "\n".join(r[comments_column] for r in rows if len(r) > comments_column and r[comments_column].strip())
+    
     for sec, (mi, ti, si) in sections.items():
         main = "\n".join(r[mi] for r in rows if len(r) > mi and r[mi].strip())
         if ti is not None:
@@ -74,7 +79,8 @@ def get_selected_casino_data():
         else:
             sim = "[No similar comparison available]"
         data[sec] = {"main": main or "[No data provided]", "top": top, "sim": sim}
-    return casino, data
+    
+    return casino, data, all_comments
 
 # AI CLIENTS
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
@@ -91,6 +97,30 @@ def call_grok(prompt):
 
 def call_claude(prompt):
     return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=800, temperature=0.5, messages=[{"role": "user", "content": prompt}]).content[0].text.strip()
+
+def incorporate_comments_into_review(review_content, comments):
+    """Use AI to incorporate relevant comments into the review before Adam's rewrite."""
+    if not comments.strip():
+        return review_content
+    
+    prompt = f"""You are tasked with incorporating feedback comments into a casino review. The comments contain specific feedback about different sections of the review, and each comment indicates which section it belongs to.
+
+Original Review:
+{review_content}
+
+Comments to incorporate:
+{comments}
+
+Please:
+1. Read each comment and identify which section it refers to (General, Payments, Games, Responsible Gambling, or Bonuses)
+2. Incorporate the relevant information from each comment into the appropriate section
+3. Maintain the original structure and format of the review
+4. Only add information that the comments specifically mention - don't make up new facts
+5. Keep the writing style consistent with the original review
+
+Return the updated review with the comment information incorporated into the relevant sections."""
+    
+    return call_claude(prompt)
 
 def parse_review_sections(content):
     """Parse review content into sections based on **Section Name** format."""
@@ -329,7 +359,7 @@ def main():
     # Get casino name first to show in the interface
     try:
         user_creds = get_service_account_credentials()
-        casino, _ = get_selected_casino_data()
+        casino, _, _ = get_selected_casino_data()
         st.session_state.casino_name = casino
     except Exception as e:
         st.error(f"❌ Error loading casino data: {e}")
@@ -352,7 +382,7 @@ def main():
             price = requests.get("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest", headers={"Accepts": "application/json", "X-CMC_PRO_API_KEY": COINMARKETCAP_API_KEY}, params={"symbol": "BTC", "convert": "USD"}).json().get("data", {}).get("BTC", {}).get("quote", {}).get("USD", {}).get("price")
             btc_str = f"1 BTC = ${price:,.2f}" if price else "[BTC price unavailable]"
 
-            casino, secs = get_selected_casino_data()
+            casino, secs, comments = get_selected_casino_data()
             
             # Define section configurations
             section_configs = {
@@ -395,13 +425,18 @@ def main():
                 review = fn(prompt)
                 out.append(f"**{sec}**\n{review}\n")
 
-            # Step 2: Rewrite with Adam's voice
-            progress_placeholder.markdown("## Rewriting with Adam's voice...")
+            # Step 2: Incorporate comments into review
+            progress_placeholder.markdown("## Incorporating feedback comments...")
             
             initial_review = "\n".join(out)
-            rewritten_review = rewrite_review_with_adam(initial_review)
+            review_with_comments = incorporate_comments_into_review(initial_review, comments)
             
-            # Step 3: Upload to Google Drive
+            # Step 3: Rewrite with Adam's voice
+            progress_placeholder.markdown("## Rewriting with Adam's voice...")
+            
+            rewritten_review = rewrite_review_with_adam(review_with_comments)
+            
+            # Step 4: Upload to Google Drive
             progress_placeholder.markdown("## Uploading to Google Drive...")
             
             doc_title = f"{casino} Review"
