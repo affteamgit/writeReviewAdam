@@ -219,7 +219,7 @@ def rewrite_section(section_title, section_content):
                 {"role": "system", "content": "You are Adam Gros, founder and editor-in-chief of Gamblineers, a seasoned crypto casino expert with over 10 years of experience. Your background is in mathematics and data analysis. You are a helpful assistant that rewrites content provided by the user - ONLY THROUGH YOUR TONE AND STYLE, YOU DO NOT CHANGE FACTS or ADD NEW FACTS. YOU REWRITE GIVEN FACTS IN YOUR OWN STYLE.\n\nYou write from a first-person singular perspective and speak directly to \"you,\" the reader.\n\nYour voice is analytical, witty, blunt, and honest-with a sharp eye for BS and a deep respect for data. You balance professionalism with dry humor. You call things as they are, whether good or bad, and never sugarcoat reviews.\n\nWriting & Style Rules\n- Always write in first-person singular (\"I\")\n- Speak directly to you, the reader\n- Keep sentences under 20 words\n- Never use em dashes or emojis\n- Never use fluff words like: \"fresh,\" \"solid,\" \"straightforward,\" \"smooth,\" \"game-changer\"\n- Avoid clichés: \"kept me on the edge of my seat,\" \"whether you're this or that,\" etc.\n- Bold key facts, bonuses, or red flags\n- Use short paragraphs (2–3 sentences max)\n- Use bullet points for clarity (pros/cons, bonuses, steps, etc.)\n- Tables are optional for comparisons\n- Be helpful without sounding preachy or salesy\n- If something sucks, say it. If it's good, explain why.\n\nTone\n- Casual but sharp\n- Witty, occasionally sarcastic (in good taste)\n- Confident, never condescending\n- Conversational, never robotic\n- Always honest-even when it hurts\n\nMission & Priorities\n- Save readers from scammy casinos and shady bonus terms\n- Transparency beats hype-user satisfaction > feature lists\n- Crypto usability matters\n- The site serves readers, not casinos\n- Highlight what others overlook-good or bad\n\nPersonality Snapshot\n- INTJ: Strategic, opinionated, allergic to buzzwords\n- Meticulous and detail-obsessed\n- Enjoys awkward silences and bad data being called out\n- Prefers dry humor and meaningful critiques."},
                 {"role": "user", "content": section_content}
             ],
-            timeout=60  # Add 60 second timeout
+            timeout=60  # 60 second timeout
         )
         print(f"Successfully rewrote section: {section_title}")
         return response.choices[0].message.content
@@ -477,112 +477,48 @@ def main():
                 return
 
             out = [f"{casino} review\n"]
-            
-            # Debug: Show which sections we're trying to process
-            st.info(f"Processing sections: {list(secs.keys())}")
-            
             for sec, content in secs.items():
-                st.info(f"Working on section: {sec}")
-                
-                if sec not in section_configs:
-                    st.warning(f"No configuration found for section: {sec}")
-                    continue
-                    
                 guidelines_file, structure_file, fn = section_configs[sec]
                 
                 # Get guidelines and structure from GitHub
-                st.info(f"Fetching files: {guidelines_file}, {structure_file}")
                 guidelines = get_file_content_from_github(guidelines_file)
                 structure = get_file_content_from_github(structure_file)
                 
-                if not guidelines:
-                    st.error(f"Error: Could not fetch guidelines file {guidelines_file} for section {sec}")
-                    st.info(f"Skipping section {sec} due to missing guidelines")
+                if not guidelines or not structure:
+                    st.error(f"Error: Could not fetch required files for section {sec}")
                     continue
                     
-                if not structure:
-                    st.error(f"Error: Could not fetch structure file {structure_file} for section {sec}")
-                    st.info(f"Skipping section {sec} due to missing structure template")
-                    continue
-                    
-                # Debug: Check if content has data
-                st.info(f"Section {sec} data - Main: {len(content['main'])} chars, Top: {len(content['top'])} chars, Sim: {len(content['sim'])} chars")
-                    
+                # Extract comments relevant to this section
+                section_comments = ""
+                if comments and comments.strip():
+                    # Look for comments mentioning this section
+                    comment_lines = comments.split('\n')
+                    relevant_comments = [line for line in comment_lines if sec.lower() in line.lower() or any(keyword in line.lower() for keyword in [sec.lower().split()[0], sec.lower().replace(' ', '')])]
+                    if relevant_comments:
+                        section_comments = f"\n\nAdditional feedback to incorporate: {' '.join(relevant_comments)}"
+                
                 prompt = prompt_template.format(
                     casino=casino,
                     section=sec,
                     guidelines=guidelines,
                     structure=structure,
-                    main=content["main"],
+                    main=content["main"] + section_comments,
                     top=content["top"],
                     sim=content["sim"],
                     btc_value=btc_str
                 )
                 
-                try:
-                    review = fn(prompt)
-                    out.append(f"**{sec}**\n{review}\n")
-                    st.success(f"✅ Completed section: {sec}")
-                except Exception as e:
-                    st.error(f"❌ Failed to generate review for section {sec}: {e}")
-                    continue
+                review = fn(prompt)
+                out.append(f"**{sec}**\n{review}\n")
 
-            # Step 2: Incorporate comments into review
-            progress_placeholder.markdown("## Incorporating feedback comments...")
-            
-            initial_review = "\n".join(out)
-            st.info(f"Initial review has {len(out)-1} sections (excluding title)")
-            
-            # Debug: Show what sections were generated
-            sections_generated = [line.split('\n')[0] for line in out[1:] if line.strip().startswith('**')]
-            st.info(f"Sections generated: {sections_generated}")
-            
-            # Check if we have comments to incorporate
-            if comments and comments.strip():
-                st.info(f"Found comments to incorporate: {len(comments)} characters")
-                try:
-                    review_with_comments = incorporate_comments_into_review(initial_review, comments)
-                    
-                    # Verify that sections are still properly formatted
-                    test_sections = [line.strip() for line in review_with_comments.split('\n') if line.strip().startswith('**')]
-                    if len(test_sections) < 5:  # Should have all 5 sections
-                        st.warning(f"Comment incorporation may have corrupted sections (found {len(test_sections)} instead of 5). Using original review.")
-                        review_with_comments = initial_review
-                    else:
-                        st.success("Comments successfully incorporated while preserving section structure")
-                        
-                except Exception as e:
-                    st.error(f"Error incorporating comments: {e}. Using original review.")
-                    review_with_comments = initial_review
-            else:
-                st.info("No comments found, skipping comment incorporation step")
-                review_with_comments = initial_review
-            
-            # Step 3: Rewrite with Adam's voice
+            # Step 2: Rewrite with Adam's voice
             progress_placeholder.markdown("## Rewriting with Adam's voice...")
             
-            try:
-                # Debug: Check what's going into the rewrite
-                sections_before_rewrite = [line.strip() for line in review_with_comments.split('\n') if line.strip().startswith('**')]
-                st.info(f"Sections before Adam rewrite: {sections_before_rewrite}")
-                
-                # Additional debug: Show a sample of the content structure
-                sample_lines = review_with_comments.split('\n')[:10]
-                st.info(f"First 10 lines of review with comments: {sample_lines}")
-                
-                rewritten_review = rewrite_review_with_adam(review_with_comments)
-                
-                # Debug: Check what came out of the rewrite  
-                sections_after_rewrite = [line.split('\n')[0] for line in rewritten_review.split('\n') if line.strip().startswith('**')]
-                st.info(f"Sections after Adam rewrite: {sections_after_rewrite}")
-                
-            except Exception as e:
-                st.error(f"Error during Adam's rewrite: {e}")
-                # Fallback to review with comments if Adam's rewrite fails
-                rewritten_review = review_with_comments
-                st.warning("Using review with comments instead of Adam's rewrite due to error.")
+            initial_review = "\n".join(out)
             
-            # Step 4: Upload to Google Drive
+            rewritten_review = rewrite_review_with_adam(initial_review)
+            
+            # Step 3: Upload to Google Drive
             progress_placeholder.markdown("## Uploading to Google Drive...")
             
             doc_title = f"{casino} Review"
