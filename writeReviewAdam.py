@@ -501,15 +501,25 @@ def main():
             sections_generated = [line.split('\n')[0] for line in out[1:] if line.strip().startswith('**')]
             st.info(f"Sections generated: {sections_generated}")
             
-            review_with_comments = incorporate_comments_into_review(initial_review, comments)
+            # Check if we have comments to incorporate
+            if comments and comments.strip():
+                st.info(f"Found comments to incorporate: {len(comments)} characters")
+                review_with_comments = incorporate_comments_into_review(initial_review, comments)
+            else:
+                st.info("No comments found, skipping comment incorporation step")
+                review_with_comments = initial_review
             
             # Step 3: Rewrite with Adam's voice
             progress_placeholder.markdown("## Rewriting with Adam's voice...")
             
             try:
                 # Debug: Check what's going into the rewrite
-                sections_before_rewrite = [line.split('\n')[0] for line in review_with_comments.split('\n') if line.strip().startswith('**')]
+                sections_before_rewrite = [line.strip() for line in review_with_comments.split('\n') if line.strip().startswith('**')]
                 st.info(f"Sections before Adam rewrite: {sections_before_rewrite}")
+                
+                # Additional debug: Show a sample of the content structure
+                sample_lines = review_with_comments.split('\n')[:10]
+                st.info(f"First 10 lines of review with comments: {sample_lines}")
                 
                 rewritten_review = rewrite_review_with_adam(review_with_comments)
                 
