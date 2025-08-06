@@ -98,6 +98,65 @@ def call_grok(prompt):
 def call_claude(prompt):
     return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=800, temperature=0.5, messages=[{"role": "user", "content": prompt}]).content[0].text.strip()
 
+def sort_comments_by_section(comments):
+    """Use AI to intelligently sort comments by section."""
+    if not comments or not comments.strip():
+        return {"General": "", "Payments": "", "Games": "", "Responsible Gambling": "", "Bonuses": ""}
+    
+    prompt = f"""Please analyze the following feedback comments and sort them by the casino review sections they belong to.
+
+Comments:
+{comments}
+
+Sections:
+- General (overall casino experience, VPN support, reputation, establishment date, etc.)
+- Payments (deposits, withdrawals, KYC, payment methods, processing times, etc.)
+- Games (game selection, slots, table games, live casino, game providers, etc.)
+- Responsible Gambling (limits, self-exclusion, problem gambling tools, etc.)
+- Bonuses (welcome bonus, promotions, bonus terms, wagering requirements, etc.)
+
+For each section, return ONLY the comments that belong to that section. If no comments belong to a section, leave it empty.
+
+Format your response exactly like this:
+**General**
+[relevant comments here or leave empty]
+
+**Payments**
+[relevant comments here or leave empty]
+
+**Games**
+[relevant comments here or leave empty]
+
+**Responsible Gambling**
+[relevant comments here or leave empty]
+
+**Bonuses**
+[relevant comments here or leave empty]"""
+    
+    try:
+        response = call_claude(prompt)
+        # Parse the response into a dictionary
+        sections = {"General": "", "Payments": "", "Games": "", "Responsible Gambling": "", "Bonuses": ""}
+        current_section = None
+        
+        for line in response.split('\n'):
+            line = line.strip()
+            if line.startswith('**') and line.endswith('**'):
+                section_name = line[2:-2]  # Remove ** from both ends
+                if section_name in sections:
+                    current_section = section_name
+            elif current_section and line:
+                if sections[current_section]:
+                    sections[current_section] += " " + line
+                else:
+                    sections[current_section] = line
+        
+        return sections
+    except Exception as e:
+        print(f"Error sorting comments: {e}")
+        # Fallback: return empty sections
+        return {"General": "", "Payments": "", "Games": "", "Responsible Gambling": "", "Bonuses": ""}
+
 def incorporate_comments_into_review(review_content, comments):
     """Use AI to incorporate relevant comments into the review before Adam's rewrite."""
     if not comments.strip():
@@ -461,6 +520,9 @@ def main():
 
             casino, secs, comments = get_selected_casino_data()
             
+            # Sort comments by section using AI
+            sorted_comments = sort_comments_by_section(comments)
+            
             # Define section configurations
             section_configs = {
                 "General": ("BaseGuidelinesClaude", "StructureTemplateGeneral", call_claude),
@@ -488,14 +550,10 @@ def main():
                     st.error(f"Error: Could not fetch required files for section {sec}")
                     continue
                     
-                # Extract comments relevant to this section
+                # Get comments for this specific section
                 section_comments = ""
-                if comments and comments.strip():
-                    # Look for comments mentioning this section
-                    comment_lines = comments.split('\n')
-                    relevant_comments = [line for line in comment_lines if sec.lower() in line.lower() or any(keyword in line.lower() for keyword in [sec.lower().split()[0], sec.lower().replace(' ', '')])]
-                    if relevant_comments:
-                        section_comments = f"\n\nAdditional feedback to incorporate: {' '.join(relevant_comments)}"
+                if sorted_comments.get(sec, "").strip():
+                    section_comments = f"\n\nAdditional feedback to incorporate: {sorted_comments[sec]}"
                 
                 prompt = prompt_template.format(
                     casino=casino,
