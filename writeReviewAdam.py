@@ -103,24 +103,60 @@ def incorporate_comments_into_review(review_content, comments):
     if not comments.strip():
         return review_content
     
-    prompt = f"""You are tasked with incorporating feedback comments into a casino review. The comments contain specific feedback about different sections of the review, and each comment indicates which section it belongs to.
+    # Parse the review into sections first to maintain structure
+    sections = parse_review_sections(review_content)
+    
+    if not sections:
+        # If parsing fails, just return original content
+        print("Failed to parse sections for comment incorporation, returning original")
+        return review_content
+    
+    print(f"Incorporating comments into {len(sections)} sections")
+    
+    # For each section, ask AI to incorporate relevant comments
+    updated_sections = []
+    
+    # Get the title (first line before sections)
+    lines = review_content.split('\n')
+    title = lines[0] if lines else ""
+    
+    for section in sections:
+        section_title = section['title']
+        section_content = section['content']
+        
+        # Ask AI to incorporate comments for this specific section
+        prompt = f"""You are incorporating feedback comments into a specific section of a casino review.
 
-Original Review:
-{review_content}
+Section: {section_title}
+Current content:
+{section_content}
 
-Comments to incorporate:
+All available comments:
 {comments}
 
 Please:
-1. Read each comment and identify which section it refers to (General, Payments, Games, Responsible Gambling, or Bonuses)
-2. Incorporate the relevant information from each comment into the appropriate section
-3. Maintain the original structure and format of the review
-4. Only add information that the comments specifically mention - don't make up new facts
-5. Keep the writing style consistent with the original review
+1. Look for any comments that specifically mention "{section_title}" or are clearly about this section
+2. If you find relevant comments, incorporate that information into the section content
+3. If no comments are relevant to this section, return the original content unchanged
+4. Only add factual information mentioned in the comments - don't make up new facts
+5. Keep the writing style consistent with the original content
+6. Do NOT include the section header in your response - only return the updated content
 
-Return the updated review with the comment information incorporated into the relevant sections."""
+Return only the updated section content (without the **{section_title}** header):"""
+        
+        try:
+            updated_content = call_claude(prompt)
+            updated_sections.append(f"**{section_title}**\n{updated_content}")
+            print(f"Successfully incorporated comments for section: {section_title}")
+        except Exception as e:
+            print(f"Error incorporating comments for {section_title}: {e}")
+            # Fallback to original content for this section
+            updated_sections.append(f"**{section_title}**\n{section_content}")
     
-    return call_claude(prompt)
+    # Reconstruct the full review
+    result = title + "\n\n" + "\n\n".join(updated_sections)
+    print("Comment incorporation completed successfully")
+    return result
 
 def parse_review_sections(content):
     """Parse review content into sections based on **Section Name** format."""
@@ -504,7 +540,20 @@ def main():
             # Check if we have comments to incorporate
             if comments and comments.strip():
                 st.info(f"Found comments to incorporate: {len(comments)} characters")
-                review_with_comments = incorporate_comments_into_review(initial_review, comments)
+                try:
+                    review_with_comments = incorporate_comments_into_review(initial_review, comments)
+                    
+                    # Verify that sections are still properly formatted
+                    test_sections = [line.strip() for line in review_with_comments.split('\n') if line.strip().startswith('**')]
+                    if len(test_sections) < 5:  # Should have all 5 sections
+                        st.warning(f"Comment incorporation may have corrupted sections (found {len(test_sections)} instead of 5). Using original review.")
+                        review_with_comments = initial_review
+                    else:
+                        st.success("Comments successfully incorporated while preserving section structure")
+                        
+                except Exception as e:
+                    st.error(f"Error incorporating comments: {e}. Using original review.")
+                    review_with_comments = initial_review
             else:
                 st.info("No comments found, skipping comment incorporation step")
                 review_with_comments = initial_review
