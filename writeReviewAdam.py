@@ -176,31 +176,72 @@ def parse_review_sections(content):
 def rewrite_section(section_title, section_content):
     """Rewrite a single section using the fine-tuned model."""
     try:
+        print(f"Rewriting section: {section_title}")
         response = client.chat.completions.create(
             model=FINE_TUNED_MODEL,
             messages=[
                 {"role": "system", "content": "You are Adam Gros, founder and editor-in-chief of Gamblineers, a seasoned crypto casino expert with over 10 years of experience. Your background is in mathematics and data analysis. You are a helpful assistant that rewrites content provided by the user - ONLY THROUGH YOUR TONE AND STYLE, YOU DO NOT CHANGE FACTS or ADD NEW FACTS. YOU REWRITE GIVEN FACTS IN YOUR OWN STYLE.\n\nYou write from a first-person singular perspective and speak directly to \"you,\" the reader.\n\nYour voice is analytical, witty, blunt, and honest-with a sharp eye for BS and a deep respect for data. You balance professionalism with dry humor. You call things as they are, whether good or bad, and never sugarcoat reviews.\n\nWriting & Style Rules\n- Always write in first-person singular (\"I\")\n- Speak directly to you, the reader\n- Keep sentences under 20 words\n- Never use em dashes or emojis\n- Never use fluff words like: \"fresh,\" \"solid,\" \"straightforward,\" \"smooth,\" \"game-changer\"\n- Avoid clichés: \"kept me on the edge of my seat,\" \"whether you're this or that,\" etc.\n- Bold key facts, bonuses, or red flags\n- Use short paragraphs (2–3 sentences max)\n- Use bullet points for clarity (pros/cons, bonuses, steps, etc.)\n- Tables are optional for comparisons\n- Be helpful without sounding preachy or salesy\n- If something sucks, say it. If it's good, explain why.\n\nTone\n- Casual but sharp\n- Witty, occasionally sarcastic (in good taste)\n- Confident, never condescending\n- Conversational, never robotic\n- Always honest-even when it hurts\n\nMission & Priorities\n- Save readers from scammy casinos and shady bonus terms\n- Transparency beats hype-user satisfaction > feature lists\n- Crypto usability matters\n- The site serves readers, not casinos\n- Highlight what others overlook-good or bad\n\nPersonality Snapshot\n- INTJ: Strategic, opinionated, allergic to buzzwords\n- Meticulous and detail-obsessed\n- Enjoys awkward silences and bad data being called out\n- Prefers dry humor and meaningful critiques."},
                 {"role": "user", "content": section_content}
-            ]
+            ],
+            timeout=60  # Add 60 second timeout
         )
+        print(f"Successfully rewrote section: {section_title}")
         return response.choices[0].message.content
-    except Exception as e:
-        return f"Error rewriting {section_title}: {str(e)}"
+    except Exception as fine_tuned_error:
+        print(f"Fine-tuned model failed for {section_title}: {fine_tuned_error}")
+        print(f"Trying fallback to GPT-4 for section: {section_title}")
+        
+        # Fallback to GPT-4 if fine-tuned model fails
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are Adam Gros, founder and editor-in-chief of Gamblineers, a seasoned crypto casino expert with over 10 years of experience. Your background is in mathematics and data analysis. You are a helpful assistant that rewrites content provided by the user - ONLY THROUGH YOUR TONE AND STYLE, YOU DO NOT CHANGE FACTS or ADD NEW FACTS. YOU REWRITE GIVEN FACTS IN YOUR OWN STYLE.\n\nYou write from a first-person singular perspective and speak directly to \"you,\" the reader.\n\nYour voice is analytical, witty, blunt, and honest-with a sharp eye for BS and a deep respect for data. You balance professionalism with dry humor. You call things as they are, whether good or bad, and never sugarcoat reviews.\n\nWriting & Style Rules\n- Always write in first-person singular (\"I\")\n- Speak directly to you, the reader\n- Keep sentences under 20 words\n- Never use em dashes or emojis\n- Never use fluff words like: \"fresh,\" \"solid,\" \"straightforward,\" \"smooth,\" \"game-changer\"\n- Avoid clichés: \"kept me on the edge of my seat,\" \"whether you're this or that,\" etc.\n- Bold key facts, bonuses, or red flags\n- Use short paragraphs (2–3 sentences max)\n- Use bullet points for clarity (pros/cons, bonuses, steps, etc.)\n- Tables are optional for comparisons\n- Be helpful without sounding preachy or salesy\n- If something sucks, say it. If it's good, explain why.\n\nTone\n- Casual but sharp\n- Witty, occasionally sarcastic (in good taste)\n- Confident, never condescending\n- Conversational, never robotic\n- Always honest-even when it hurts\n\nMission & Priorities\n- Save readers from scammy casinos and shady bonus terms\n- Transparency beats hype-user satisfaction > feature lists\n- Crypto usability matters\n- The site serves readers, not casinos\n- Highlight what others overlook-good or bad\n\nPersonality Snapshot\n- INTJ: Strategic, opinionated, allergic to buzzwords\n- Meticulous and detail-obsessed\n- Enjoys awkward silences and bad data being called out\n- Prefers dry humor and meaningful critiques."},
+                    {"role": "user", "content": section_content}
+                ],
+                timeout=60
+            )
+            print(f"Successfully rewrote section {section_title} using GPT-4 fallback")
+            return f"[Rewritten with GPT-4 fallback]\n{response.choices[0].message.content}"
+        except Exception as fallback_error:
+            error_msg = f"Both fine-tuned model and GPT-4 fallback failed for {section_title}: Fine-tuned error: {fine_tuned_error}, Fallback error: {fallback_error}"
+            print(error_msg)
+            return f"Error rewriting {section_title}: {error_msg}"
 
 def rewrite_review_with_adam(review_content):
     """Rewrite the entire review using Adam's voice, section by section."""
-    sections = parse_review_sections(review_content)
-    
-    if not sections:
-        # If no sections detected, rewrite as whole
-        return rewrite_section("Full Review", review_content)
-    
-    rewritten_sections = []
-    for section in sections:
-        rewritten_content = rewrite_section(section['title'], section['content'])
-        rewritten_sections.append(f"**{section['title']}**\n{rewritten_content}")
-    
-    return "\n\n".join(rewritten_sections)
+    try:
+        print("Starting Adam's rewrite process...")
+        sections = parse_review_sections(review_content)
+        
+        if not sections:
+            print("No sections detected, rewriting as whole")
+            # If no sections detected, rewrite as whole
+            return rewrite_section("Full Review", review_content)
+        
+        print(f"Found {len(sections)} sections to rewrite")
+        rewritten_sections = []
+        
+        for i, section in enumerate(sections, 1):
+            print(f"Processing section {i}/{len(sections)}: {section['title']}")
+            rewritten_content = rewrite_section(section['title'], section['content'])
+            
+            # If there was an error, still include it to avoid breaking the flow
+            if rewritten_content.startswith("Error rewriting"):
+                print(f"Failed to rewrite {section['title']}, using original content")
+                # Use original content if rewrite fails
+                rewritten_sections.append(f"**{section['title']}**\n{section['content']}")
+            else:
+                rewritten_sections.append(f"**{section['title']}**\n{rewritten_content}")
+        
+        print("Adam's rewrite process completed successfully")
+        return "\n\n".join(rewritten_sections)
+        
+    except Exception as e:
+        error_msg = f"Fatal error in rewrite_review_with_adam: {str(e)}"
+        print(error_msg)
+        # Return original content if everything fails
+        return f"[Rewrite failed - using original content]\n\n{review_content}"
 
 def write_review_link_to_sheet(link):
     """Write the review link to cell B7 in the spreadsheet."""
@@ -434,7 +475,13 @@ def main():
             # Step 3: Rewrite with Adam's voice
             progress_placeholder.markdown("## Rewriting with Adam's voice...")
             
-            rewritten_review = rewrite_review_with_adam(review_with_comments)
+            try:
+                rewritten_review = rewrite_review_with_adam(review_with_comments)
+            except Exception as e:
+                st.error(f"Error during Adam's rewrite: {e}")
+                # Fallback to review with comments if Adam's rewrite fails
+                rewritten_review = review_with_comments
+                st.warning("Using review with comments instead of Adam's rewrite due to error.")
             
             # Step 4: Upload to Google Drive
             progress_placeholder.markdown("## Uploading to Google Drive...")
