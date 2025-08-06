@@ -441,16 +441,36 @@ def main():
                 return
 
             out = [f"{casino} review\n"]
+            
+            # Debug: Show which sections we're trying to process
+            st.info(f"Processing sections: {list(secs.keys())}")
+            
             for sec, content in secs.items():
+                st.info(f"Working on section: {sec}")
+                
+                if sec not in section_configs:
+                    st.warning(f"No configuration found for section: {sec}")
+                    continue
+                    
                 guidelines_file, structure_file, fn = section_configs[sec]
                 
                 # Get guidelines and structure from GitHub
+                st.info(f"Fetching files: {guidelines_file}, {structure_file}")
                 guidelines = get_file_content_from_github(guidelines_file)
                 structure = get_file_content_from_github(structure_file)
                 
-                if not guidelines or not structure:
-                    st.error(f"Error: Could not fetch required files for section {sec}")
+                if not guidelines:
+                    st.error(f"Error: Could not fetch guidelines file {guidelines_file} for section {sec}")
+                    st.info(f"Skipping section {sec} due to missing guidelines")
                     continue
+                    
+                if not structure:
+                    st.error(f"Error: Could not fetch structure file {structure_file} for section {sec}")
+                    st.info(f"Skipping section {sec} due to missing structure template")
+                    continue
+                    
+                # Debug: Check if content has data
+                st.info(f"Section {sec} data - Main: {len(content['main'])} chars, Top: {len(content['top'])} chars, Sim: {len(content['sim'])} chars")
                     
                 prompt = prompt_template.format(
                     casino=casino,
@@ -463,20 +483,40 @@ def main():
                     btc_value=btc_str
                 )
                 
-                review = fn(prompt)
-                out.append(f"**{sec}**\n{review}\n")
+                try:
+                    review = fn(prompt)
+                    out.append(f"**{sec}**\n{review}\n")
+                    st.success(f"✅ Completed section: {sec}")
+                except Exception as e:
+                    st.error(f"❌ Failed to generate review for section {sec}: {e}")
+                    continue
 
             # Step 2: Incorporate comments into review
             progress_placeholder.markdown("## Incorporating feedback comments...")
             
             initial_review = "\n".join(out)
+            st.info(f"Initial review has {len(out)-1} sections (excluding title)")
+            
+            # Debug: Show what sections were generated
+            sections_generated = [line.split('\n')[0] for line in out[1:] if line.strip().startswith('**')]
+            st.info(f"Sections generated: {sections_generated}")
+            
             review_with_comments = incorporate_comments_into_review(initial_review, comments)
             
             # Step 3: Rewrite with Adam's voice
             progress_placeholder.markdown("## Rewriting with Adam's voice...")
             
             try:
+                # Debug: Check what's going into the rewrite
+                sections_before_rewrite = [line.split('\n')[0] for line in review_with_comments.split('\n') if line.strip().startswith('**')]
+                st.info(f"Sections before Adam rewrite: {sections_before_rewrite}")
+                
                 rewritten_review = rewrite_review_with_adam(review_with_comments)
+                
+                # Debug: Check what came out of the rewrite  
+                sections_after_rewrite = [line.split('\n')[0] for line in rewritten_review.split('\n') if line.strip().startswith('**')]
+                st.info(f"Sections after Adam rewrite: {sections_after_rewrite}")
+                
             except Exception as e:
                 st.error(f"Error during Adam's rewrite: {e}")
                 # Fallback to review with comments if Adam's rewrite fails
