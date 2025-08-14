@@ -113,10 +113,23 @@ def get_selected_casino_data():
     
     return casino, data, all_comments
 
-@st.cache_data(ttl=300)
 def get_cached_casino_data():
-    """Cache casino data to avoid redundant API calls (5 min cache)"""
-    return get_selected_casino_data()
+    """Cache casino data based on the actual casino name to detect changes"""
+    # First, get just the casino name to use as cache key
+    creds = get_service_account_credentials()
+    sheets = build("sheets", "v4", credentials=creds)
+    current_casino = sheets.spreadsheets().values().get(
+        spreadsheetId=SPREADSHEET_ID, 
+        range=f"{SHEET_NAME}!B1"
+    ).execute().get("values", [[""]])[0][0].strip()
+    
+    # Use casino name as part of the cache key
+    @st.cache_data(ttl=300, show_spinner=False)
+    def _cached_get_casino_data(casino_name):
+        """Internal cached function with casino name as key"""
+        return get_selected_casino_data()
+    
+    return _cached_get_casino_data(current_casino)
 
 # AI CLIENTS
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
