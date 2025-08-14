@@ -8,6 +8,8 @@ from googleapiclient.discovery import build
 from anthropic import Anthropic
 from pathlib import Path
 import re
+import concurrent.futures
+from typing import Dict, Tuple
 
 # CONFIG 
 OPENAI_API_KEY      = st.secrets["OPENAI_API_KEY"]
@@ -50,6 +52,35 @@ def get_file_content_from_github(filename):
         print(f"Error reading file {filename} from GitHub: {str(e)}")
         return None
 
+@st.cache_data(ttl=3600)
+def get_all_templates():
+    """Fetch all templates at once and cache them for 1 hour"""
+    templates = {}
+    files = [
+        'PromptTemplate', 
+        'BaseGuidelinesClaude', 
+        'BaseGuidelinesGrok', 
+        'StructureTemplateGeneral', 
+        'StructureTemplatePayments', 
+        'StructureTemplateGames', 
+        'StructureTemplateResponsible', 
+        'StructureTemplateBonuses'
+    ]
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_file = {executor.submit(get_file_content_from_github, filename): filename 
+                         for filename in files}
+        
+        for future in concurrent.futures.as_completed(future_to_file):
+            filename = future_to_file[future]
+            try:
+                templates[filename] = future.result()
+            except Exception as e:
+                print(f"Error fetching template {filename}: {e}")
+                templates[filename] = None
+    
+    return templates
+
 def get_selected_casino_data():
     creds = get_service_account_credentials()
     sheets = build("sheets", "v4", credentials=creds)
@@ -81,6 +112,11 @@ def get_selected_casino_data():
         data[sec] = {"main": main or "[No data provided]", "top": top, "sim": sim}
     
     return casino, data, all_comments
+
+@st.cache_data(ttl=300)
+def get_cached_casino_data():
+    """Cache casino data to avoid redundant API calls (5 min cache)"""
+    return get_selected_casino_data()
 
 # AI CLIENTS
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
@@ -278,30 +314,14 @@ def rewrite_section(section_title, section_content):
                 {"role": "system", "content": "You are Adam Gros, founder and editor-in-chief of Gamblineers, a seasoned crypto casino expert with over 10 years of experience. Your background is in mathematics and data analysis. You are a helpful assistant that rewrites content provided by the user - ONLY THROUGH YOUR TONE AND STYLE, YOU DO NOT CHANGE FACTS or ADD NEW FACTS. YOU REWRITE GIVEN FACTS IN YOUR OWN STYLE.\n\nYou write from a first-person singular perspective and speak directly to \"you,\" the reader.\n\nYour voice is analytical, witty, blunt, and honest-with a sharp eye for BS and a deep respect for data. You balance professionalism with dry humor. You call things as they are, whether good or bad, and never sugarcoat reviews.\n\nWriting & Style Rules\n- Always write in first-person singular (\"I\")\n- Speak directly to you, the reader\n- Keep sentences under 20 words\n- Never use em dashes or emojis\n- Never use fluff words like: \"fresh,\" \"solid,\" \"straightforward,\" \"smooth,\" \"game-changer\"\n- Avoid clichés: \"kept me on the edge of my seat,\" \"whether you're this or that,\" etc.\n- Bold key facts, bonuses, or red flags\n- Use short paragraphs (2–3 sentences max)\n- Use bullet points for clarity (pros/cons, bonuses, steps, etc.)\n- Tables are optional for comparisons\n- Be helpful without sounding preachy or salesy\n- If something sucks, say it. If it's good, explain why.\n\nTone\n- Casual but sharp\n- Witty, occasionally sarcastic (in good taste)\n- Confident, never condescending\n- Conversational, never robotic\n- Always honest-even when it hurts\n\nMission & Priorities\n- Save readers from scammy casinos and shady bonus terms\n- Transparency beats hype-user satisfaction > feature lists\n- Crypto usability matters\n- The site serves readers, not casinos\n- Highlight what others overlook-good or bad\n\nPersonality Snapshot\n- INTJ: Strategic, opinionated, allergic to buzzwords\n- Meticulous and detail-obsessed\n- Enjoys awkward silences and bad data being called out\n- Prefers dry humor and meaningful critiques."},
                 {"role": "user", "content": section_content}
             ],
-            timeout=60  # 60 second timeout
+            timeout=30  # Reduced timeout to 30 seconds
         )
         print(f"Successfully rewrote section: {section_title}")
         return response.choices[0].message.content
-    except Exception as fine_tuned_error:
-        print(f"Fine-tuned model failed for {section_title}: {fine_tuned_error}")
-        print(f"Trying fallback to GPT-4 for section: {section_title}")
-        
-        # Fallback to GPT-4 if fine-tuned model fails
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are Adam Gros, founder and editor-in-chief of Gamblineers, a seasoned crypto casino expert with over 10 years of experience. Your background is in mathematics and data analysis. You are a helpful assistant that rewrites content provided by the user - ONLY THROUGH YOUR TONE AND STYLE, YOU DO NOT CHANGE FACTS or ADD NEW FACTS. YOU REWRITE GIVEN FACTS IN YOUR OWN STYLE.\n\nYou write from a first-person singular perspective and speak directly to \"you,\" the reader.\n\nYour voice is analytical, witty, blunt, and honest-with a sharp eye for BS and a deep respect for data. You balance professionalism with dry humor. You call things as they are, whether good or bad, and never sugarcoat reviews.\n\nWriting & Style Rules\n- Always write in first-person singular (\"I\")\n- Speak directly to you, the reader\n- Keep sentences under 20 words\n- Never use em dashes or emojis\n- Never use fluff words like: \"fresh,\" \"solid,\" \"straightforward,\" \"smooth,\" \"game-changer\"\n- Avoid clichés: \"kept me on the edge of my seat,\" \"whether you're this or that,\" etc.\n- Bold key facts, bonuses, or red flags\n- Use short paragraphs (2–3 sentences max)\n- Use bullet points for clarity (pros/cons, bonuses, steps, etc.)\n- Tables are optional for comparisons\n- Be helpful without sounding preachy or salesy\n- If something sucks, say it. If it's good, explain why.\n\nTone\n- Casual but sharp\n- Witty, occasionally sarcastic (in good taste)\n- Confident, never condescending\n- Conversational, never robotic\n- Always honest-even when it hurts\n\nMission & Priorities\n- Save readers from scammy casinos and shady bonus terms\n- Transparency beats hype-user satisfaction > feature lists\n- Crypto usability matters\n- The site serves readers, not casinos\n- Highlight what others overlook-good or bad\n\nPersonality Snapshot\n- INTJ: Strategic, opinionated, allergic to buzzwords\n- Meticulous and detail-obsessed\n- Enjoys awkward silences and bad data being called out\n- Prefers dry humor and meaningful critiques."},
-                    {"role": "user", "content": section_content}
-                ],
-                timeout=60
-            )
-            print(f"Successfully rewrote section {section_title} using GPT-4 fallback")
-            return f"[Rewritten with GPT-4 fallback]\n{response.choices[0].message.content}"
-        except Exception as fallback_error:
-            error_msg = f"Both fine-tuned model and GPT-4 fallback failed for {section_title}: Fine-tuned error: {fine_tuned_error}, Fallback error: {fallback_error}"
-            print(error_msg)
-            return f"Error rewriting {section_title}: {error_msg}"
+    except Exception as error:
+        error_msg = f"Fine-tuned model failed for {section_title}: {error}"
+        print(error_msg)
+        return f"[Error rewriting {section_title}]\n{section_content}"
 
 def rewrite_review_with_adam(review_content):
     """Rewrite the entire review using Adam's voice, section by section."""
@@ -322,7 +342,7 @@ def rewrite_review_with_adam(review_content):
             rewritten_content = rewrite_section(section['title'], section['content'])
             
             # If there was an error, still include it to avoid breaking the flow
-            if rewritten_content.startswith("Error rewriting"):
+            if rewritten_content.startswith("[Error rewriting"):
                 print(f"Failed to rewrite {section['title']}, using original content")
                 # Use original content if rewrite fails
                 rewritten_sections.append(f"**{section['title']}**\n{section['content']}")
@@ -337,6 +357,84 @@ def rewrite_review_with_adam(review_content):
         print(error_msg)
         # Return original content if everything fails
         return f"[Rewrite failed - using original content]\n\n{review_content}"
+
+def generate_section(section_data: Tuple) -> str:
+    """Generate a single section review"""
+    sec, content, templates, sorted_comments, casino, btc_str = section_data
+    
+    # Define section configurations
+    section_configs = {
+        "General": ("BaseGuidelinesClaude", "StructureTemplateGeneral", call_claude),
+        "Payments": ("BaseGuidelinesClaude", "StructureTemplatePayments", call_claude),
+        "Games": ("BaseGuidelinesClaude", "StructureTemplateGames", call_claude),
+        "Responsible Gambling": ("BaseGuidelinesGrok", "StructureTemplateResponsible", call_grok),
+        "Bonuses": ("BaseGuidelinesClaude", "StructureTemplateBonuses", call_claude),
+    }
+    
+    try:
+        guidelines_file, structure_file, fn = section_configs[sec]
+        
+        # Get templates from cached data
+        guidelines = templates.get(guidelines_file)
+        structure = templates.get(structure_file)
+        prompt_template = templates.get('PromptTemplate')
+        
+        if not guidelines or not structure or not prompt_template:
+            return f"**{sec}**\n[Error: Missing templates for section {sec}]\n"
+        
+        # Get comments for this specific section
+        section_comments = ""
+        if sorted_comments.get(sec, "").strip():
+            section_comments = f"\n\nAdditional feedback to incorporate: {sorted_comments[sec]}"
+        
+        prompt = prompt_template.format(
+            casino=casino,
+            section=sec,
+            guidelines=guidelines,
+            structure=structure,
+            main=content["main"] + section_comments,
+            top=content["top"],
+            sim=content["sim"],
+            btc_value=btc_str
+        )
+        
+        review = fn(prompt)
+        return f"**{sec}**\n{review}\n"
+        
+    except Exception as e:
+        print(f"Error generating section {sec}: {e}")
+        return f"**{sec}**\n[Error generating section: {str(e)}]\n"
+
+def generate_sections_parallel(casino: str, secs: Dict, sorted_comments: Dict, templates: Dict, btc_str: str) -> list:
+    """Generate all sections in parallel while maintaining order"""
+    
+    # Prepare data for each section
+    section_data = [
+        (sec, content, templates, sorted_comments, casino, btc_str)
+        for sec, content in secs.items()
+    ]
+    
+    # Generate sections in parallel with max 3 workers to avoid API rate limits
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        # Submit all tasks and maintain order
+        future_to_section = {
+            executor.submit(generate_section, data): data[0] 
+            for data in section_data
+        }
+        
+        # Collect results in the original order
+        results = {}
+        for future in concurrent.futures.as_completed(future_to_section):
+            section_name = future_to_section[future]
+            try:
+                results[section_name] = future.result()
+            except Exception as e:
+                print(f"Error in parallel generation for {section_name}: {e}")
+                results[section_name] = f"**{section_name}**\n[Error: {str(e)}]\n"
+    
+    # Return results in the original section order
+    section_order = ["General", "Payments", "Games", "Responsible Gambling", "Bonuses"]
+    return [results[sec] for sec in section_order if sec in results]
 
 def write_review_link_to_sheet(link):
     """Write the review link to cell B7 in the spreadsheet."""
@@ -495,7 +593,7 @@ def main():
     # Get casino name first to show in the interface
     try:
         user_creds = get_service_account_credentials()
-        casino, _, _ = get_selected_casino_data()
+        casino, _, _ = get_cached_casino_data()
         st.session_state.casino_name = casino
     except Exception as e:
         st.error(f"❌ Error loading casino data: {e}")
@@ -515,59 +613,45 @@ def main():
             docs_service = build("docs", "v1", credentials=user_creds)
             drive_service = build("drive", "v3", credentials=user_creds)
 
-            price = requests.get("https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest", headers={"Accepts": "application/json", "X-CMC_PRO_API_KEY": COINMARKETCAP_API_KEY}, params={"symbol": "BTC", "convert": "USD"}).json().get("data", {}).get("BTC", {}).get("quote", {}).get("USD", {}).get("price")
-            btc_str = f"1 BTC = ${price:,.2f}" if price else "[BTC price unavailable]"
-
-            casino, secs, comments = get_selected_casino_data()
+            # Load all data in parallel
+            progress_placeholder.markdown("## Loading templates and data...")
             
-            # Sort comments by section using AI
-            sorted_comments = sort_comments_by_section(comments)
-            
-            # Define section configurations
-            section_configs = {
-                "General": ("BaseGuidelinesClaude", "StructureTemplateGeneral", call_claude),
-                "Payments": ("BaseGuidelinesClaude", "StructureTemplatePayments", call_claude),
-                "Games": ("BaseGuidelinesClaude", "StructureTemplateGames", call_claude),
-                "Responsible Gambling": ("BaseGuidelinesGrok", "StructureTemplateResponsible", call_grok),
-                "Bonuses": ("BaseGuidelinesClaude", "StructureTemplateBonuses", call_claude),
-            }
-
-            # Get the prompt template from GitHub
-            prompt_template = get_file_content_from_github("PromptTemplate")
-            if not prompt_template:
-                st.error("Error: Could not fetch prompt template from GitHub")
-                return
-
-            out = [f"{casino} review\n"]
-            for sec, content in secs.items():
-                guidelines_file, structure_file, fn = section_configs[sec]
-                
-                # Get guidelines and structure from GitHub
-                guidelines = get_file_content_from_github(guidelines_file)
-                structure = get_file_content_from_github(structure_file)
-                
-                if not guidelines or not structure:
-                    st.error(f"Error: Could not fetch required files for section {sec}")
-                    continue
-                    
-                # Get comments for this specific section
-                section_comments = ""
-                if sorted_comments.get(sec, "").strip():
-                    section_comments = f"\n\nAdditional feedback to incorporate: {sorted_comments[sec]}"
-                
-                prompt = prompt_template.format(
-                    casino=casino,
-                    section=sec,
-                    guidelines=guidelines,
-                    structure=structure,
-                    main=content["main"] + section_comments,
-                    top=content["top"],
-                    sim=content["sim"],
-                    btc_value=btc_str
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                # Submit all data loading tasks
+                templates_future = executor.submit(get_all_templates)
+                casino_data_future = executor.submit(get_cached_casino_data)
+                btc_future = executor.submit(
+                    lambda: requests.get(
+                        "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest",
+                        headers={"Accepts": "application/json", "X-CMC_PRO_API_KEY": COINMARKETCAP_API_KEY},
+                        params={"symbol": "BTC", "convert": "USD"}
+                    ).json().get("data", {}).get("BTC", {}).get("quote", {}).get("USD", {}).get("price")
                 )
                 
-                review = fn(prompt)
-                out.append(f"**{sec}**\n{review}\n")
+                # Collect results
+                templates = templates_future.result()
+                casino, secs, comments = casino_data_future.result()
+                price = btc_future.result()
+            
+            btc_str = f"1 BTC = ${price:,.2f}" if price else "[BTC price unavailable]"
+            
+            # Check if all required templates were loaded
+            required_templates = ['PromptTemplate', 'BaseGuidelinesClaude', 'BaseGuidelinesGrok']
+            missing_templates = [t for t in required_templates if not templates.get(t)]
+            if missing_templates:
+                st.error(f"Error: Could not fetch required templates: {', '.join(missing_templates)}")
+                return
+            
+            # Sort comments by section using AI
+            progress_placeholder.markdown("## Sorting comments by section...")
+            sorted_comments = sort_comments_by_section(comments)
+            
+            # Generate all sections in parallel
+            progress_placeholder.markdown("## Generating review sections in parallel...")
+            parallel_results = generate_sections_parallel(casino, secs, sorted_comments, templates, btc_str)
+            
+            # Combine results
+            out = [f"{casino} review\n"] + parallel_results
 
             # Step 2: Rewrite with Adam's voice
             progress_placeholder.markdown("## Rewriting with Adam's voice...")
