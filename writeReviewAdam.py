@@ -321,6 +321,47 @@ def rewrite_section(section_title, section_content):
         print(error_msg)
         return f"[Error rewriting {section_title}]\n{section_content}"
 
+def generate_overview_section(casino_name, keyword, main_points):
+    """Generate Overview section using Adam's fine-tuned model."""
+    try:
+        print("Generating Overview section with Adam's voice...")
+        
+        # Create prompt for overview generation
+        overview_prompt = f"""Write an engaging overview/introduction for a {casino_name} casino review. Use the following details:
+
+Keyword/Theme: {keyword}
+
+Main points to cover:
+{main_points}
+
+Context: This overview will introduce a comprehensive review that covers General info, Payments, Games, Responsible Gambling, and Bonuses sections. 
+
+Write a compelling 2-3 paragraph introduction that:
+1. Hooks the reader with the keyword/theme
+2. Touches on the main points provided
+3. Sets expectations for what the full review will cover
+4. Maintains your signature analytical and honest approach
+
+Do not repeat information that will be covered in detail in other sections - this should be a high-level introduction that draws readers in."""
+
+        response = client.chat.completions.create(
+            model=FINE_TUNED_MODEL,
+            messages=[
+                {"role": "system", "content": "You are Adam Gros, founder and editor-in-chief of Gamblineers, a seasoned crypto casino expert with over 10 years of experience. Your background is in mathematics and data analysis. You are a helpful assistant that writes content in your distinctive voice and style.\n\nYou write from a first-person singular perspective and speak directly to \"you,\" the reader.\n\nYour voice is analytical, witty, blunt, and honest-with a sharp eye for BS and a deep respect for data. You balance professionalism with dry humor. You call things as they are, whether good or bad, and never sugarcoat reviews.\n\nWriting & Style Rules\n- Always write in first-person singular (\"I\")\n- Speak directly to you, the reader\n- Keep sentences under 20 words\n- Never use em dashes or emojis\n- Never use fluff words like: \"fresh,\" \"solid,\" \"straightforward,\" \"smooth,\" \"game-changer\"\n- Avoid clichés: \"kept me on the edge of my seat,\" \"whether you're this or that,\" etc.\n- Bold key facts, bonuses, or red flags\n- Use short paragraphs (2–3 sentences max)\n- Use bullet points for clarity (pros/cons, bonuses, steps, etc.)\n- Tables are optional for comparisons\n- Be helpful without sounding preachy or salesy\n- If something sucks, say it. If it's good, explain why.\n\nTone\n- Casual but sharp\n- Witty, occasionally sarcastic (in good taste)\n- Confident, never condescending\n- Conversational, never robotic\n- Always honest-even when it hurts"},
+                {"role": "user", "content": overview_prompt}
+            ],
+            timeout=30
+        )
+        
+        overview_content = response.choices[0].message.content.strip()
+        print("Successfully generated Overview section")
+        return f"**Overview**\n{overview_content}"
+        
+    except Exception as error:
+        error_msg = f"Failed to generate Overview section: {error}"
+        print(error_msg)
+        return f"**Overview**\n[Error generating Overview section: {error}]"
+
 def rewrite_review_with_adam(review_content):
     """Rewrite the entire review using Adam's voice, section by section."""
     try:
@@ -518,7 +559,7 @@ def insert_parsed_text_with_formatting(docs_service, doc_id, review_text):
 
     doc = docs_service.documents().get(documentId=doc_id).execute()
     header_requests = []
-    section_titles = ["General", "Payments", "Games", "Responsible Gambling", "Bonuses"]
+    section_titles = ["Overview", "General", "Payments", "Games", "Responsible Gambling", "Bonuses"]
 
     for element in doc.get('body', {}).get('content', []):
         if 'paragraph' in element:
@@ -573,6 +614,110 @@ def main():
         st.session_state.review_completed = False
         st.session_state.review_url = None
         st.session_state.casino_name = None
+        st.session_state.rewritten_review = None
+        st.session_state.awaiting_overview = False
+    
+    # If review is completed and awaiting overview input
+    if st.session_state.awaiting_overview and st.session_state.rewritten_review:
+        st.markdown(f"## Review Complete! Now add the Overview section for: **{st.session_state.casino_name}**")
+        
+        # Show the completed review for reference
+        with st.expander("📖 View Completed Review (for reference)", expanded=False):
+            st.markdown(st.session_state.rewritten_review)
+        
+        st.markdown("### Add Overview Section")
+        st.markdown("Please provide a keyword/theme and main points for the introduction:")
+        
+        # Input fields for overview
+        keyword = st.text_input("Keyword/Theme (e.g., 'Innovation', 'Reliability', 'User Experience')", 
+                               placeholder="Enter the main theme/keyword for this casino")
+        
+        main_points = st.text_area("Main Points (2-3 key points to highlight in the overview)", 
+                                  placeholder="• Strong crypto integration\n• Excellent customer support\n• Wide game variety",
+                                  height=120)
+        
+        # Generate overview and finalize
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("Generate Overview & Post to Google Docs", type="primary", disabled=not (keyword and main_points)):
+                if keyword and main_points:
+                    try:
+                        # Generate overview section
+                        st.info("🔄 Generating Overview section with Adam's voice...")
+                        overview_section = generate_overview_section(
+                            st.session_state.casino_name, 
+                            keyword, 
+                            main_points
+                        )
+                        
+                        # Combine overview with the rest of the review - Overview goes first
+                        title_line = f"{st.session_state.casino_name} review"
+                        final_review = f"{title_line}\n\n{overview_section}\n\n{st.session_state.rewritten_review}"
+                        
+                        # Post to Google Docs
+                        st.info("📤 Uploading to Google Drive...")
+                        user_creds = get_service_account_credentials()
+                        docs_service = build("docs", "v1", credentials=user_creds)
+                        drive_service = build("drive", "v3", credentials=user_creds)
+                        
+                        doc_title = f"{st.session_state.casino_name} Review"
+                        existing_doc_id = find_existing_doc(drive_service, FOLDER_ID, doc_title)
+
+                        if existing_doc_id:
+                            drive_service.files().delete(fileId=existing_doc_id).execute()
+
+                        doc_id = create_google_doc_in_folder(docs_service, drive_service, FOLDER_ID, doc_title, final_review)
+                        doc_url = f"https://docs.google.com/document/d/{doc_id}"
+                        
+                        # Write the review link to the spreadsheet
+                        write_review_link_to_sheet(doc_url)
+                        
+                        # Mark as completed
+                        st.session_state.review_completed = True
+                        st.session_state.review_url = doc_url
+                        st.session_state.awaiting_overview = False
+                        st.session_state.rewritten_review = None
+                        
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error finalizing review: {e}")
+        
+        with col2:
+            if st.button("Skip Overview (Post without Overview)", type="secondary"):
+                try:
+                    # Post to Google Docs without overview - using exact original workflow
+                    st.info("📤 Uploading to Google Drive...")
+                    user_creds = get_service_account_credentials()
+                    docs_service = build("docs", "v1", credentials=user_creds)
+                    drive_service = build("drive", "v3", credentials=user_creds)
+                    
+                    doc_title = f"{st.session_state.casino_name} Review"
+                    existing_doc_id = find_existing_doc(drive_service, FOLDER_ID, doc_title)
+
+                    if existing_doc_id:
+                        drive_service.files().delete(fileId=existing_doc_id).execute()
+
+                    # Use original review format - exactly as it was before
+                    final_review = f"{st.session_state.casino_name} review\n\n{st.session_state.rewritten_review}"
+                    doc_id = create_google_doc_in_folder(docs_service, drive_service, FOLDER_ID, doc_title, final_review)
+                    doc_url = f"https://docs.google.com/document/d/{doc_id}"
+                    
+                    # Write the review link to the spreadsheet
+                    write_review_link_to_sheet(doc_url)
+                    
+                    # Mark as completed
+                    st.session_state.review_completed = True
+                    st.session_state.review_url = doc_url
+                    st.session_state.awaiting_overview = False
+                    st.session_state.rewritten_review = None
+                    
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"❌ Error posting review: {e}")
+        
+        return
     
     # If review is already completed, show the success message
     if st.session_state.review_completed:
@@ -581,10 +726,12 @@ def main():
             st.info(f"Review link: {st.session_state.review_url}")
         
         # Add a button to generate a new review
-        if st.button("Write Review", type="primary"):
+        if st.button("Write New Review", type="primary"):
             st.session_state.review_completed = False
             st.session_state.review_url = None
             st.session_state.casino_name = None
+            st.session_state.rewritten_review = None
+            st.session_state.awaiting_overview = False
             st.rerun()
         return
     
@@ -658,27 +805,12 @@ def main():
             
             rewritten_review = rewrite_review_with_adam(initial_review)
             
-            # Step 3: Upload to Google Drive
-            progress_placeholder.markdown("## Uploading to Google Drive...")
+            # Step 3: Store rewritten review and prompt for Overview input
+            st.session_state.rewritten_review = rewritten_review
+            st.session_state.awaiting_overview = True
+            st.session_state.casino_name = casino
             
-            doc_title = f"{casino} Review"
-            existing_doc_id = find_existing_doc(drive_service, FOLDER_ID, doc_title)
-
-            if existing_doc_id:
-                # Delete the old document
-                drive_service.files().delete(fileId=existing_doc_id).execute()
-
-            doc_id = create_google_doc_in_folder(docs_service, drive_service, FOLDER_ID, f"{casino} Review", rewritten_review)
-            doc_url = f"https://docs.google.com/document/d/{doc_id}"
-            
-            # Write the review link to the spreadsheet
-            write_review_link_to_sheet(doc_url)
-            
-            # Mark review as completed and store the URL
-            st.session_state.review_completed = True
-            st.session_state.review_url = doc_url
-            
-            # Clear progress message and show success
+            # Clear progress message and show overview input screen
             progress_placeholder.empty()
             st.rerun()
 
