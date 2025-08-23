@@ -121,16 +121,25 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 anthropic = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 def call_openai(prompt):
-    return client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0.5, max_tokens=800).choices[0].message.content.strip()
+    # Add fact constraint system message
+    fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
+    full_prompt = f"{fact_constraint}\n\n{prompt}"
+    return client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_prompt}], temperature=0.1, max_tokens=800).choices[0].message.content.strip()
 
 def call_grok(prompt):
+    # Add fact constraint system message
+    fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
+    full_prompt = f"{fact_constraint}\n\n{prompt}"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {GROK_API_KEY}"}
-    payload = {"model": "grok-3", "messages": [{"role": "user", "content": prompt}], "temperature": 0.5, "max_tokens": 800}
+    payload = {"model": "grok-3", "messages": [{"role": "user", "content": full_prompt}], "temperature": 0.1, "max_tokens": 800}
     j = requests.post("https://api.x.ai/v1/chat/completions", json=payload, headers=headers).json()
     return j.get("choices", [{}])[0].get("message", {}).get("content", "[Grok failed]").strip()
 
 def call_claude(prompt):
-    return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=800, temperature=0.5, messages=[{"role": "user", "content": prompt}]).content[0].text.strip()
+    # Add fact constraint system message
+    fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
+    full_prompt = f"{fact_constraint}\n\n{prompt}"
+    return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=800, temperature=0.1, messages=[{"role": "user", "content": full_prompt}]).content[0].text.strip()
 
 def sort_comments_by_section(comments):
     """Use AI to intelligently sort comments by section."""
