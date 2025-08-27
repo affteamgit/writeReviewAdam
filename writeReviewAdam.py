@@ -638,8 +638,8 @@ def main():
         st.markdown("Please provide a keyword/theme and main points for the introduction:")
         
         # Input fields for overview
-        keyword = st.text_input("Keyword/Theme (e.g., 'Innovation', 'Reliability', 'User Experience')", 
-                               placeholder="Enter the main theme/keyword for this casino")
+        keyword = st.text_input("Keyword", 
+                               placeholder="Enter the keyword")
         
         main_points = st.text_area("Main Points (2-3 key points to highlight in the overview)", 
                                   placeholder="• Strong crypto integration\n• Excellent customer support\n• Wide game variety",
