@@ -338,7 +338,7 @@ def generate_overview_section(casino_name, keyword, main_points):
         # Create prompt for overview generation
         overview_prompt = f"""Write an engaging overview/introduction for a {casino_name} casino review. Use the following details:
 
-Keyword/Theme: {keyword}
+SEO Keywords (MUST appear verbatim): {keyword}
 
 Main points to cover:
 {main_points}
@@ -346,10 +346,12 @@ Main points to cover:
 Context: This overview will introduce a comprehensive review that covers General info, Payments, Games, Responsible Gambling, and Bonuses sections. 
 
 Write a compelling 2-3 paragraph introduction that:
-1. Hooks the reader with the keyword/theme
+1. MUST include the exact phrase "{keyword}" somewhere in the overview (verbatim for SEO purposes)
 2. Touches on the main points provided
 3. Sets expectations for what the full review will cover
 4. Maintains your signature analytical and honest approach
+
+CRITICAL: The phrase "{keyword}" must appear exactly as written in the overview text for SEO purposes. Do not paraphrase or modify these words.
 
 Do not repeat information that will be covered in detail in other sections - this should be a high-level introduction that draws readers in."""
 
@@ -635,7 +637,7 @@ def main():
             st.markdown(st.session_state.rewritten_review)
         
         st.markdown("### Add Overview Section")
-        st.markdown("Please provide a keyword/theme and main points for the introduction:")
+        st.markdown("Please provide a keyword and main points for the introduction:")
         
         # Input fields for overview
         keyword = st.text_input("Keyword", 
