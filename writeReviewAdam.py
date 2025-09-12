@@ -40,7 +40,7 @@ def get_service_account_credentials():
 def get_file_content_from_github(filename):
     """Get content of a file from GitHub repository."""
     try:
-        github_base_url = "https://raw.githubusercontent.com/affteamgit/writeReview/main/templates/"
+        github_base_url = "https://raw.githubusercontent.com/affteamgit/writeReviewAdam/main/templates/"
         file_url = f"{github_base_url}{filename}.txt"
         
         response = requests.get(file_url)
