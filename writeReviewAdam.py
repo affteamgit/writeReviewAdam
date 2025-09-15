@@ -413,9 +413,9 @@ def fix_bullet_points(review_content):
     try:
         import re
         
-        # Replace \\* at the beginning of lines with bullet points (• )
+        # Replace \\* at the beginning of lines with dash bullets for Google Docs
         # This matches: optional whitespace + \\* + space + rest of line
-        fixed_content = re.sub(r'^(\s*)\\\\\* ', r'\1• ', review_content, flags=re.MULTILINE)
+        fixed_content = re.sub(r'^(\s*)\\\\\* ', r'\1- ', review_content, flags=re.MULTILINE)
         
         print("Bullet points formatting applied successfully")
         return fixed_content
