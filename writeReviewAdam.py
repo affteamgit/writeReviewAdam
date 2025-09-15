@@ -409,7 +409,7 @@ def rewrite_review_with_adam(review_content):
         return f"[Rewrite failed - using original content]\n\n{review_content}"
 
 def fix_bullet_points(review_content):
-    """Convert escaped asterisks to proper bullet points for better formatting."""
+    """Convert escaped asterisks to proper bullet points and format headings for Google Docs."""
     try:
         import re
         
@@ -417,11 +417,15 @@ def fix_bullet_points(review_content):
         # This matches: literal backslash + asterisk + space at start of line
         fixed_content = re.sub(r'^\\\\\* ', r'- ', review_content, flags=re.MULTILINE)
         
-        print("Bullet points formatting applied successfully")
+        # Convert markdown headings (## Heading) to bold headings for Google Docs
+        # This preserves the heading text but removes markdown syntax
+        fixed_content = re.sub(r'^## (.+)$', r'**\1**', fixed_content, flags=re.MULTILINE)
+        
+        print("Bullet points and headings formatting applied successfully")
         return fixed_content
         
     except Exception as e:
-        print(f"Error fixing bullet points: {e}")
+        print(f"Error fixing bullet points and headings: {e}")
         # Return original content if fixing fails
         return review_content
 
