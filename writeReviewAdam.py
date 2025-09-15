@@ -409,23 +409,31 @@ def rewrite_review_with_adam(review_content):
         return f"[Rewrite failed - using original content]\n\n{review_content}"
 
 def fix_bullet_points(review_content):
-    """Convert escaped asterisks to proper bullet points and format headings for Google Docs."""
+    """Fix all formatting issues from Adam's rewrite for proper Google Docs display."""
     try:
         import re
         
-        # Replace \* at the beginning of lines with dash bullets for Google Docs
-        # This matches: literal backslash + asterisk + space at start of line
+        # 1. Replace \* at the beginning of lines with dash bullets for Google Docs
         fixed_content = re.sub(r'^\\\\\* ', r'- ', review_content, flags=re.MULTILINE)
         
-        # Convert markdown headings (## Heading) to bold headings for Google Docs
-        # This preserves the heading text but removes markdown syntax
+        # 2. Convert escaped hash headers (\#\#\#) to bold format - preserve existing ** if present
+        fixed_content = re.sub(r'^\\\\\#\\\\\#\\\\\# \*\*(.+?)\*\*$', r'**\1**', fixed_content, flags=re.MULTILINE)
+        fixed_content = re.sub(r'^\\\\\#\\\\\#\\\\\# (.+)$', r'**\1**', fixed_content, flags=re.MULTILINE)
+        
+        # 3. Convert markdown headings (## Heading) to bold format
         fixed_content = re.sub(r'^## (.+)$', r'**\1**', fixed_content, flags=re.MULTILINE)
         
-        print("Bullet points and headings formatting applied successfully")
+        # 4. Fix escaped plus signs in bonus descriptions (\+ -> +)
+        fixed_content = re.sub(r'\\\\\+', r'+', fixed_content)
+        
+        # 5. Ensure \- bullets (which are already correct) stay as - bullets
+        fixed_content = re.sub(r'^\\\\\- ', r'- ', fixed_content, flags=re.MULTILINE)
+        
+        print("All formatting issues fixed successfully")
         return fixed_content
         
     except Exception as e:
-        print(f"Error fixing bullet points and headings: {e}")
+        print(f"Error fixing formatting: {e}")
         # Return original content if fixing fails
         return review_content
 
