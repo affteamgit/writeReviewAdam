@@ -408,6 +408,23 @@ def rewrite_review_with_adam(review_content):
         # Return original content if everything fails
         return f"[Rewrite failed - using original content]\n\n{review_content}"
 
+def fix_bullet_points(review_content):
+    """Convert escaped asterisks to proper bullet points for better formatting."""
+    try:
+        import re
+        
+        # Replace \\* at the beginning of lines with bullet points (• )
+        # This matches: optional whitespace + \\* + space + rest of line
+        fixed_content = re.sub(r'^(\s*)\\\\\* ', r'\1• ', review_content, flags=re.MULTILINE)
+        
+        print("Bullet points formatting applied successfully")
+        return fixed_content
+        
+    except Exception as e:
+        print(f"Error fixing bullet points: {e}")
+        # Return original content if fixing fails
+        return review_content
+
 def generate_section(section_data: Tuple) -> str:
     """Generate a single section review"""
     sec, content, templates, sorted_comments, casino, btc_str = section_data
@@ -665,6 +682,9 @@ def main():
                         title_line = f"{st.session_state.casino_name} review"
                         final_review = f"{title_line}\n\n{overview_section}\n\n{st.session_state.rewritten_review}"
                         
+                        # Fix bullet points before uploading
+                        final_review = fix_bullet_points(final_review)
+                        
                         # Post to Google Docs
                         st.info("📤 Uploading to Google Drive...")
                         user_creds = get_service_account_credentials()
@@ -711,6 +731,9 @@ def main():
 
                     # Use original review format - exactly as it was before
                     final_review = f"{st.session_state.casino_name} review\n\n{st.session_state.rewritten_review}"
+                    
+                    # Fix bullet points before uploading
+                    final_review = fix_bullet_points(final_review)
                     doc_id = create_google_doc_in_folder(docs_service, drive_service, FOLDER_ID, doc_title, final_review)
                     doc_url = f"https://docs.google.com/document/d/{doc_id}"
                     
