@@ -240,9 +240,8 @@ Please:
 1. Look for any comments that specifically mention "{section_title}" or are clearly about this section
 2. If you find relevant comments, incorporate that information into the section content
 3. If no comments are relevant to this section, return the original content unchanged
-4. Only add factual information mentioned in the comments - don't make up new facts
-5. Keep the writing style consistent with the original content
-6. Do NOT include the section header in your response - only return the updated content
+4. Keep the writing style consistent with the original content
+5. Do NOT include the section header in your response - only return the updated content
 
 Return only the updated section content (without the **{section_title}** header):"""
         
@@ -330,11 +329,56 @@ def rewrite_section(section_title, section_content):
         print(error_msg)
         return f"[Error rewriting {section_title}]\n{section_content}"
 
-def generate_overview_section(casino_name, keyword, main_points):
-    """Generate Overview section using Adam's fine-tuned model."""
+def generate_tldr_points(review_content):
+    """Generate 4-5 TLDR bullet points summarizing the entire review."""
+    try:
+        print("Generating TLDR points from the full review...")
+
+        tldr_prompt = f"""Based on the following casino review, create 4-5 concise TLDR bullet points that summarize the key findings across ALL sections (General, Payments, Games, Responsible Gambling, Bonuses).
+
+Review content:
+{review_content}
+
+Create TLDR points that:
+1. Cover the most important aspects from different sections
+2. Include specific facts, numbers, or standout features mentioned in the review
+3. Mention both positive and negative aspects if present
+4. Are concise but informative (1-2 sentences each)
+5. Use Adam's direct, analytical tone
+
+Format your response as exactly 4-5 bullet points, one per line, starting with "- " (dash and space).
+Do not include any introduction or explanation - just the bullet points."""
+
+        response = client.chat.completions.create(
+            model=FINE_TUNED_MODEL,
+            messages=[
+                {"role": "system", "content": "You are Adam Gros, founder and editor-in-chief of Gamblineers. Create concise, analytical TLDR points that capture the essence of casino reviews with your direct, no-nonsense style."},
+                {"role": "user", "content": tldr_prompt}
+            ],
+            timeout=30
+        )
+
+        tldr_content = response.choices[0].message.content.strip()
+
+        # Parse the bullet points into a list
+        bullet_points = []
+        for line in tldr_content.split('\n'):
+            line = line.strip()
+            if line.startswith('- '):
+                bullet_points.append(line[2:])  # Remove "- " prefix
+
+        print(f"Successfully generated {len(bullet_points)} TLDR points")
+        return bullet_points
+
+    except Exception as error:
+        print(f"Error generating TLDR points: {error}")
+        return ["Error generating TLDR summary"]
+
+def generate_overview_section(casino_name, keyword, main_points, tldr_points=None):
+    """Generate Overview section using Adam's fine-tuned model, optionally with TLDR."""
     try:
         print("Generating Overview section with Adam's voice...")
-        
+
         # Create prompt for overview generation
         overview_prompt = f"""Write an engaging overview/introduction for a {casino_name} casino review. Use the following details:
 
@@ -343,7 +387,7 @@ SEO Keywords (MUST appear verbatim): {keyword}
 Main points to cover:
 {main_points}
 
-Context: This overview will introduce a comprehensive review that covers General info, Payments, Games, Responsible Gambling, and Bonuses sections. 
+Context: This overview will introduce a comprehensive review that covers General info, Payments, Games, Responsible Gambling, and Bonuses sections.
 
 Write a compelling 2-3 paragraph introduction that:
 1. MUST include the exact phrase "{keyword}" somewhere in the overview (verbatim for SEO purposes)
@@ -363,11 +407,19 @@ Do not repeat information that will be covered in detail in other sections - thi
             ],
             timeout=30
         )
-        
+
         overview_content = response.choices[0].message.content.strip()
+
+        # Add TLDR section if points are provided
+        if tldr_points:
+            tldr_section = "\n\n**TLDR**"
+            for point in tldr_points:
+                tldr_section += f"\n- {point}"
+            overview_content += tldr_section
+
         print("Successfully generated Overview section")
         return f"**Overview**\n{overview_content}"
-        
+
     except Exception as error:
         error_msg = f"Failed to generate Overview section: {error}"
         print(error_msg)
@@ -464,7 +516,7 @@ def generate_section(section_data: Tuple) -> str:
         # Get comments for this specific section
         section_comments = ""
         if sorted_comments.get(sec, "").strip():
-            section_comments = f"\n\nAdditional feedback to incorporate: {sorted_comments[sec]}"
+            section_comments = f"\n\nUser feedback: {sorted_comments[sec]}"
         
         prompt = prompt_template.format(
             casino=casino,
@@ -667,14 +719,40 @@ def main():
         
         st.markdown("### Add Overview Section")
         st.markdown("Please provide a keyword and main points for the introduction:")
-        
+
         # Input fields for overview
-        keyword = st.text_input("Keyword", 
+        keyword = st.text_input("Keyword",
                                placeholder="Enter the keyword")
-        
-        main_points = st.text_area("Main Points (2-3 key points to highlight in the overview)", 
+
+        main_points = st.text_area("Main Points (2-3 key points to highlight in the overview)",
                                   placeholder="• Strong crypto integration\n• Excellent customer support\n• Wide game variety",
                                   height=120)
+
+        # Generate and display TLDR options
+        st.markdown("### TLDR Section")
+        st.markdown("Select which TLDR bullet points to include at the bottom of the overview:")
+
+        # Initialize TLDR points in session state if not already done
+        if 'tldr_points' not in st.session_state:
+            if keyword or main_points:  # Only generate if user has started filling the form
+                with st.spinner("🔄 Generating TLDR bullet points..."):
+                    st.session_state.tldr_points = generate_tldr_points(st.session_state.rewritten_review)
+            else:
+                st.session_state.tldr_points = []
+
+        # Show TLDR options with checkboxes if we have points
+        selected_tldr_points = []
+        if st.session_state.tldr_points:
+            st.markdown("**Choose TLDR bullet points to include:**")
+            for i, point in enumerate(st.session_state.tldr_points):
+                if st.checkbox(point, key=f"tldr_{i}", value=True):  # Default to checked
+                    selected_tldr_points.append(point)
+        else:
+            # Button to generate TLDR points
+            if st.button("Generate TLDR Points", type="secondary"):
+                with st.spinner("🔄 Generating TLDR bullet points..."):
+                    st.session_state.tldr_points = generate_tldr_points(st.session_state.rewritten_review)
+                st.rerun()
         
         # Generate overview and finalize
         col1, col2 = st.columns([1, 1])
@@ -682,12 +760,13 @@ def main():
             if st.button("Generate Overview & Post to Google Docs", type="primary", disabled=not (keyword and main_points)):
                 if keyword and main_points:
                     try:
-                        # Generate overview section
+                        # Generate overview section with selected TLDR points
                         st.info("🔄 Generating Overview section with Adam's voice...")
                         overview_section = generate_overview_section(
-                            st.session_state.casino_name, 
-                            keyword, 
-                            main_points
+                            st.session_state.casino_name,
+                            keyword,
+                            main_points,
+                            selected_tldr_points if selected_tldr_points else None
                         )
                         
                         # Combine overview with the rest of the review - Overview goes first
@@ -720,7 +799,9 @@ def main():
                         st.session_state.review_url = doc_url
                         st.session_state.awaiting_overview = False
                         st.session_state.rewritten_review = None
-                        
+                        if 'tldr_points' in st.session_state:
+                            del st.session_state.tldr_points
+
                         st.rerun()
                         
                     except Exception as e:
@@ -757,7 +838,9 @@ def main():
                     st.session_state.review_url = doc_url
                     st.session_state.awaiting_overview = False
                     st.session_state.rewritten_review = None
-                    
+                    if 'tldr_points' in st.session_state:
+                        del st.session_state.tldr_points
+
                     st.rerun()
                     
                 except Exception as e:
@@ -778,6 +861,8 @@ def main():
             st.session_state.casino_name = None
             st.session_state.rewritten_review = None
             st.session_state.awaiting_overview = False
+            if 'tldr_points' in st.session_state:
+                del st.session_state.tldr_points
             st.rerun()
         return
     
