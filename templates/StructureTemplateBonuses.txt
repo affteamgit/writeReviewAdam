@@ -4,11 +4,13 @@
 
 * IF casino has no deposit bonuses:
   * IF we have an exclusive no deposit bonus:
+    - ONLY IF exclusive no deposit bonus exists: Add H3 header: ### Exclusive No Deposit Bonus
     - Describe our exclusive no deposit bonus in paragraph format (general nature only - no percentages, amounts, wagering, etc.), then list all specific details in bullet points
     - Comment on it using two rating criteria from the bonus data
     - IF we have multiple exclusive no deposit bonuses: Point out this is rare and describe/comment on all
     - IF there's also a standard no deposit bonus: Briefly compare our exclusive to it (how/why exclusive is better/worse) but don't describe standard separately
   * IF we don't have an exclusive no deposit bonus:
+    - ONLY IF standard no deposit bonus exists: Add H3 header: ### No Deposit Bonus
     - Describe the standard no deposit bonus in paragraph format (general nature only - no percentages, amounts, wagering, etc.), then list all specific details in bullet points
     - Comment on it using two rating criteria from the bonus data
     - IF there are multiple standard no deposit bonuses: Point out this is rare and describe/comment on all
@@ -19,27 +21,35 @@
 
 * IF casino has first deposit bonuses:
   * IF we have an exclusive first deposit bonus:
+    - ONLY IF exclusive first deposit bonus exists: Add H3 header: ### Exclusive First Deposit Bonus
     - Describe our exclusive first deposit bonus in paragraph format (general nature only - no percentages, amounts, wagering, etc.), then list all specific details in bullet points
     - Comment on it using two rating criteria from the bonus data
     - IF we have multiple exclusive first deposit bonuses: Point out this is rare and describe/comment on all
     - IF there are also standard first deposit bonuses: Briefly compare each exclusive to its most similar standard counterpart (how/why exclusive is better/worse) but don't describe standard ones separately
   * IF we don't have an exclusive first deposit bonus:
+    - ONLY IF standard first deposit bonus exists: Add H3 header: ### First Deposit Bonus
     - Describe the standard first deposit bonus in paragraph format (general nature only - no percentages, amounts, wagering, etc.), then list all specific details in bullet points
     - Comment on it using two rating criteria from the bonus data
     - IF there are multiple standard first deposit bonuses: Point out this is rare and describe/comment on all
   * IF the first deposit doesn't include free spins OR includes very few (less than 50) OR has high wagering (over 40x on bonus, over 40x on deposit, or over 20x on deposit+bonus): Recommend another first deposit from top casinos list
-  * IF casino also has other exclusives or unique bonuses (not no deposit or first deposit): Describe and comment on them all here. Include comment if such bonus is better/worse than first deposit bonus and why.
+  * IF casino also has other exclusives or unique bonuses (not no deposit or first deposit):
+    - ONLY IF other exclusive bonuses exist: Add H3 header: ### Other Exclusive Bonuses
+    - Describe and comment on them all here. Include comment if such bonus is better/worse than first deposit bonus and why.
 * IF casino doesn't have first deposit bonus:
-  * IF it has other exclusives or unique bonuses (not no deposit or first deposit): Describe and comment on them all here. Include comment if such bonus is better/worse than having a first deposit match bonus and why.
+  * IF it has other exclusives or unique bonuses (not no deposit or first deposit):
+    - ONLY IF other exclusive bonuses exist: Add H3 header: ### Other Exclusive Bonuses
+    - Describe and comment on them all here. Include comment if such bonus is better/worse than having a first deposit match bonus and why.
   * IF it doesn't have any other exclusives or unique bonuses: Say there are no welcome deposit casino bonuses and recommend one of the top first deposit casinos instead.
 
 ## Sports Bonuses
 
+* ONLY IF casino has sports bonuses: Add H3 header: ### Sports Bonuses
 * IF casino has sports bonuses: Briefly list them here. No need to comment on them.
 * IF casino doesn't have sports bonuses: DO NOT include this section at all.
 
 ## Faucet Promotions
 
+* ONLY IF casino has faucet promotions: Add H3 header: ### Faucet Promotions
 * IF casino has faucet promotions: List them, mention them as a free way to get money and an interesting way to keep players engaged. No need to comment on them.
 * IF casino doesn't have faucet promotions: DO NOT include this section at all.
 
