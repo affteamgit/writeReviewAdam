@@ -44,7 +44,10 @@
 * IF casino doesn't have faucet promotions: DO NOT include this section at all.
 
 **IF THE CASINO HAS NO BONUSES:**
-* Include the name of the bonus section but don't do anything else
+* Explicitly state that the casino has no welcome bonuses available (no deposit bonuses and no first deposit bonuses)
+* Mention this as a significant limitation for players looking for bonus value
+* Point out this is a missed opportunity for the casino to attract new players
+* Recommend one or two alternative casinos from the top casinos list that do offer welcome bonuses
 
 **BONUS DESCRIPTION FORMAT:**
 Write the bonus in a paragraph describing ONLY the general nature/type of bonus without any specific details (percentages, amounts, deposit requirements, wagering, etc.), then include ALL specific bonus details in bullet points.
