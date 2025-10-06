@@ -141,11 +141,68 @@ def call_claude(prompt):
     full_prompt = f"{fact_constraint}\n\n{prompt}"
     return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=800, temperature=0.3, messages=[{"role": "user", "content": full_prompt}]).content[0].text.strip()
 
+def extract_casino_names_from_data(comparison_data):
+    """Extract casino names from comparison data string.
+    Assumes format like 'CasinoName (link): data...' or '[CasinoName](link): data...'
+    """
+    casino_names = []
+    # Match patterns like:
+    # - "CasinoName (https://...)"
+    # - "[CasinoName](https://...)"
+    # - "CasinoName:"
+    patterns = [
+        r'\[([^\]]+)\]\(https?://[^\)]+\)',  # [CasinoName](link)
+        r'^([A-Z][A-Za-z0-9\s\.]+?)(?:\s*\(https?://|\s*:)',  # CasinoName (link or :
+    ]
+
+    for line in comparison_data.split('\n'):
+        line = line.strip()
+        if not line or line.startswith('[No '):
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, line)
+            if match:
+                casino_name = match.group(1).strip()
+                if casino_name and casino_name not in casino_names:
+                    casino_names.append(casino_name)
+                break
+
+    return casino_names
+
+def get_next_comparison_casino(available_casinos, used_casinos_tracker):
+    """Select next casino using round-robin logic.
+
+    Args:
+        available_casinos: List of casino names available for comparison
+        used_casinos_tracker: List tracking recently used casinos (max 5)
+
+    Returns:
+        Selected casino name or None if no casinos available
+    """
+    if not available_casinos:
+        return None
+
+    # Filter out recently used casinos (within last 5 uses)
+    available = [c for c in available_casinos if c not in used_casinos_tracker[-5:]]
+
+    # If all casinos have been used recently, reset and use the first one
+    if not available:
+        available = available_casinos
+
+    # Return the first available casino
+    return available[0] if available else None
+
+def update_used_casinos_tracker(tracker, casino_name):
+    """Add casino to the used tracker list."""
+    if casino_name:
+        tracker.append(casino_name)
+    return tracker
+
 def sort_comments_by_section(comments):
     """Use AI to intelligently sort comments by section."""
     if not comments or not comments.strip():
         return {"General": "", "Payments": "", "Games": "", "Responsible Gambling": "", "Bonuses": ""}
-    
+
     prompt = f"""Please analyze the following feedback comments and sort them by the casino review sections they belong to.
 
 Comments:
@@ -489,70 +546,58 @@ def fix_bullet_points(review_content):
         # Return original content if fixing fails
         return review_content
 
-def generate_section(section_data: Tuple) -> str:
-    """Generate a single section review"""
-    sec, content, templates, sorted_comments, casino, btc_str = section_data
-    
-    # Define section configurations
-    section_configs = {
-        "General": ("BaseGuidelinesClaude", "StructureTemplateGeneral", call_claude),
-        "Payments": ("BaseGuidelinesClaude", "StructureTemplatePayments", call_claude),
-        "Games": ("BaseGuidelinesClaude", "StructureTemplateGames", call_claude),
-        "Responsible Gambling": ("BaseGuidelinesGrok", "StructureTemplateResponsible", call_grok),
-        "Bonuses": ("BaseGuidelinesClaude", "StructureTemplateBonuses", call_claude),
-    }
-    
-    try:
-        guidelines_file, structure_file, fn = section_configs[sec]
-        
-        # Get templates from cached data
-        guidelines = templates.get(guidelines_file)
-        structure = templates.get(structure_file)
-        prompt_template = templates.get('PromptTemplate')
-        
-        if not guidelines or not structure or not prompt_template:
-            return f"**{sec}**\n[Error: Missing templates for section {sec}]\n"
-        
-        # Get comments for this specific section
-        section_comments = ""
-        if sorted_comments.get(sec, "").strip():
-            section_comments = f"\n\nUser feedback: {sorted_comments[sec]}"
-        
-        prompt = prompt_template.format(
-            casino=casino,
-            section=sec,
-            guidelines=guidelines,
-            structure=structure,
-            main=content["main"] + section_comments,
-            top=content["top"],
-            sim=content["sim"],
-            btc_value=btc_str
-        )
-        
-        review = fn(prompt)
-        return f"**{sec}**\n{review}\n"
-        
-    except Exception as e:
-        print(f"Error generating section {sec}: {e}")
-        return f"**{sec}**\n[Error generating section: {str(e)}]\n"
-
 def generate_sections_parallel(casino: str, secs: Dict, sorted_comments: Dict, templates: Dict, btc_str: str) -> list:
-    """Generate all sections in parallel while maintaining order"""
-    
-    # Prepare data for each section
+    """Generate all sections in parallel while maintaining round-robin casino selection"""
+
+    # Initialize tracker for used comparison casinos
+    used_casinos_tracker = []
+
+    # Pre-assign a rotation list of casinos to each section
+    # We need to do this sequentially before parallel generation
+    section_order = ["General", "Payments", "Games", "Responsible Gambling", "Bonuses"]
+    section_assignments = {}
+
+    for sec in section_order:
+        if sec in secs:
+            content = secs[sec]
+            # Extract available casinos
+            top_casinos = extract_casino_names_from_data(content["top"])
+            sim_casinos = extract_casino_names_from_data(content["sim"])
+            all_available = top_casinos + sim_casinos
+
+            # Build a prioritized rotation list for this section
+            # This list will help the AI rotate through different casinos for different comparisons
+            rotation_list = []
+            temp_tracker = used_casinos_tracker.copy()
+
+            # Get up to 4 casinos for rotation within this section
+            for _ in range(min(4, len(all_available))):
+                next_casino = get_next_comparison_casino(all_available, temp_tracker)
+                if next_casino:
+                    rotation_list.append(next_casino)
+                    temp_tracker.append(next_casino)
+
+            # Update the main tracker with the first casino from this section's rotation
+            if rotation_list:
+                used_casinos_tracker.append(rotation_list[0])
+
+            # Store assignment
+            section_assignments[sec] = rotation_list
+
+    # Prepare data for each section with pre-assigned casino rotation lists
     section_data = [
-        (sec, content, templates, sorted_comments, casino, btc_str)
-        for sec, content in secs.items()
+        (sec, secs[sec], templates, sorted_comments, casino, btc_str, section_assignments.get(sec, []))
+        for sec in section_order if sec in secs
     ]
-    
+
     # Generate sections in parallel with max 3 workers to avoid API rate limits
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         # Submit all tasks and maintain order
         future_to_section = {
-            executor.submit(generate_section, data): data[0] 
+            executor.submit(generate_section_with_assignment, data): data[0]
             for data in section_data
         }
-        
+
         # Collect results in the original order
         results = {}
         for future in concurrent.futures.as_completed(future_to_section):
@@ -562,10 +607,63 @@ def generate_sections_parallel(casino: str, secs: Dict, sorted_comments: Dict, t
             except Exception as e:
                 print(f"Error in parallel generation for {section_name}: {e}")
                 results[section_name] = f"**{section_name}**\n[Error: {str(e)}]\n"
-    
+
     # Return results in the original section order
-    section_order = ["General", "Payments", "Games", "Responsible Gambling", "Bonuses"]
     return [results[sec] for sec in section_order if sec in results]
+
+def generate_section_with_assignment(section_data: Tuple) -> str:
+    """Generate section with pre-assigned rotation list of casinos"""
+    sec, content, templates, sorted_comments, casino, btc_str, casino_rotation_list = section_data
+
+    # Define section configurations
+    section_configs = {
+        "General": ("BaseGuidelinesClaude", "StructureTemplateGeneral", call_claude),
+        "Payments": ("BaseGuidelinesClaude", "StructureTemplatePayments", call_claude),
+        "Games": ("BaseGuidelinesClaude", "StructureTemplateGames", call_claude),
+        "Responsible Gambling": ("BaseGuidelinesGrok", "StructureTemplateResponsible", call_grok),
+        "Bonuses": ("BaseGuidelinesClaude", "StructureTemplateBonuses", call_claude),
+    }
+
+    try:
+        guidelines_file, structure_file, fn = section_configs[sec]
+
+        # Get templates from cached data
+        guidelines = templates.get(guidelines_file)
+        structure = templates.get(structure_file)
+        prompt_template = templates.get('PromptTemplate')
+
+        if not guidelines or not structure or not prompt_template:
+            return f"**{sec}**\n[Error: Missing templates for section {sec}]\n"
+
+        # Get comments for this specific section
+        section_comments = ""
+        if sorted_comments.get(sec, "").strip():
+            section_comments = f"\n\nUser feedback: {sorted_comments[sec]}"
+
+        # Build round-robin instruction for the prompt
+        round_robin_instruction = ""
+        if casino_rotation_list:
+            casinos_str = "', '".join(casino_rotation_list)
+            round_robin_instruction = f"\n\nIMPORTANT - Casino Comparison Rotation:\nWhen making comparisons to other casinos in this section, rotate through these casinos from the Top/Similar data in THIS ORDER: '{casinos_str}'.\n\nFor your FIRST comparison, use '{casino_rotation_list[0]}'. For your SECOND comparison, use '{casino_rotation_list[1] if len(casino_rotation_list) > 1 else casino_rotation_list[0]}'. Continue rotating through this list for any additional comparisons. This ensures variety and prevents any single casino from being mentioned too frequently."
+            print(f"Section {sec}: Rotation list = {casino_rotation_list}")
+
+        prompt = prompt_template.format(
+            casino=casino,
+            section=sec,
+            guidelines=guidelines,
+            structure=structure,
+            main=content["main"] + section_comments,
+            top=content["top"],
+            sim=content["sim"],
+            btc_value=btc_str
+        ) + round_robin_instruction
+
+        review = fn(prompt)
+        return f"**{sec}**\n{review}\n"
+
+    except Exception as e:
+        print(f"Error generating section {sec}: {e}")
+        return f"**{sec}**\n[Error generating section: {str(e)}]\n"
 
 def write_review_link_to_sheet(link):
     """Write the review link to cell B7 in the spreadsheet."""
