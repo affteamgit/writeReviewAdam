@@ -169,6 +169,38 @@ def extract_casino_names_from_data(comparison_data):
 
     return casino_names
 
+def extract_casino_links_map(comparison_data):
+    """Extract casino names and their corresponding links from comparison data.
+    Returns a dictionary mapping casino names to their URLs.
+    Assumes format like 'CasinoName (link): data...' or '[CasinoName](link): data...'
+    """
+    casino_links = {}
+
+    # Pattern to match both formats:
+    # - "[CasinoName](https://...)"
+    # - "CasinoName (https://...)"
+    patterns = [
+        (r'\[([^\]]+)\]\((https?://[^\)]+)\)', 1, 2),  # [CasinoName](link) - groups 1=name, 2=url
+        (r'^([A-Z][A-Za-z0-9\s\.]+?)\s*\((https?://[^\)]+)\)', 1, 2),  # CasinoName (link) - groups 1=name, 2=url
+    ]
+
+    for line in comparison_data.split('\n'):
+        line = line.strip()
+        if not line or line.startswith('[No '):
+            continue
+
+        for pattern, name_group, url_group in patterns:
+            match = re.search(pattern, line)
+            if match:
+                casino_name = match.group(name_group).strip()
+                casino_url = match.group(url_group).strip()
+                if casino_name and casino_url and casino_name not in casino_links:
+                    casino_links[casino_name] = casino_url
+                    print(f"Extracted link: {casino_name} -> {casino_url}")
+                break
+
+    return casino_links
+
 def get_next_comparison_casino(available_casinos, used_casinos_tracker):
     """Select next casino using round-robin logic.
 
@@ -517,30 +549,99 @@ def rewrite_review_with_adam(review_content):
         # Return original content if everything fails
         return f"[Rewrite failed - using original content]\n\n{review_content}"
 
+def add_internal_links_to_casinos(review_content, casino_links_map, reviewed_casino_name):
+    """Add internal links to casino names mentioned in the review.
+
+    Args:
+        review_content: The review text content
+        casino_links_map: Dictionary mapping casino names to their URLs
+        reviewed_casino_name: Name of the casino being reviewed (to exclude from linking)
+
+    Returns:
+        Review content with casino names linked in [CasinoName](url) format
+    """
+    if not casino_links_map:
+        print("No casino links found to add")
+        return review_content
+
+    print(f"Adding internal links for {len(casino_links_map)} casinos...")
+
+    # Sort casino names by length (longest first) to avoid partial matches
+    sorted_casinos = sorted(casino_links_map.keys(), key=len, reverse=True)
+
+    # Remove the reviewed casino from the list
+    sorted_casinos = [c for c in sorted_casinos if c.lower() != reviewed_casino_name.lower()]
+
+    linked_content = review_content
+
+    for casino_name in sorted_casinos:
+        casino_url = casino_links_map[casino_name]
+
+        # Create a pattern that matches the casino name but NOT if it's already in a link
+        # This prevents double-linking and linking casino names that are already formatted
+        # Pattern explanation:
+        # - Negative lookbehind: (?<!\[) - not preceded by [
+        # - Negative lookbehind: (?<!\]) - not preceded by ]
+        # - Negative lookbehind: (?<!\() - not preceded by (
+        # - The casino name (escaped for regex special chars)
+        # - Negative lookahead: (?!\]) - not followed by ]
+        # - Negative lookahead: (?!\() - not followed by (
+
+        # Escape special regex characters in casino name
+        escaped_name = re.escape(casino_name)
+
+        # Pattern to match casino name not already in link format
+        pattern = r'(?<!\[)(?<!\])(?<!\()' + escaped_name + r'(?!\])(?!\()'
+
+        # Replace with markdown link format
+        replacement = f'[{casino_name}]({casino_url})'
+
+        # Use a function to check each match and only replace if not already linked
+        def replace_if_not_linked(match):
+            # Get surrounding context to double-check
+            start = max(0, match.start() - 10)
+            end = min(len(linked_content), match.end() + 10)
+            context = linked_content[start:end]
+
+            # If the context already contains link markers, skip
+            if '](' in context or '[' in context[:match.start()-start+1]:
+                return match.group(0)
+
+            return replacement
+
+        # Count how many replacements we'll make
+        matches = list(re.finditer(pattern, linked_content))
+        if matches:
+            print(f"Linking {len(matches)} mention(s) of '{casino_name}'")
+            linked_content = re.sub(pattern, replacement, linked_content)
+
+    print("Internal linking completed")
+    return linked_content
+
 def fix_bullet_points(review_content):
     """Fix all formatting issues from Adam's rewrite for proper Google Docs display."""
     try:
         import re
-        
+
         # 1. Replace \* at the beginning of lines with dash bullets for Google Docs
         fixed_content = re.sub(r'^\\\\\* ', r'- ', review_content, flags=re.MULTILINE)
-        
+
         # 2. Convert escaped hash headers (\#\#\#) to bold format - preserve existing ** if present
         fixed_content = re.sub(r'^\\\\\#\\\\\#\\\\\# \*\*(.+?)\*\*$', r'**\1**', fixed_content, flags=re.MULTILINE)
         fixed_content = re.sub(r'^\\\\\#\\\\\#\\\\\# (.+)$', r'**\1**', fixed_content, flags=re.MULTILINE)
-        
+
         # 3. Convert markdown headings (## Heading) to bold format
         fixed_content = re.sub(r'^## (.+)$', r'**\1**', fixed_content, flags=re.MULTILINE)
-        
+
         # 4. Fix escaped plus signs in bonus descriptions (\+ -> +)
         fixed_content = re.sub(r'\\\\\+', r'+', fixed_content)
-        
+
         # 5. Ensure \- bullets (which are already correct) stay as - bullets
         fixed_content = re.sub(r'^\\\\\- ', r'- ', fixed_content, flags=re.MULTILINE)
-        
+
         print("All formatting issues fixed successfully")
         return fixed_content
-        
+
     except Exception as e:
         print(f"Error fixing formatting: {e}")
         # Return original content if fixing fails
@@ -806,6 +907,7 @@ def main():
         st.session_state.casino_name = None
         st.session_state.rewritten_review = None
         st.session_state.awaiting_overview = False
+        st.session_state.casino_links_map = {}
     
     # If review is completed and awaiting overview input
     if st.session_state.awaiting_overview and st.session_state.rewritten_review:
@@ -870,10 +972,18 @@ def main():
                         # Combine overview with the rest of the review - Overview goes first
                         title_line = f"{st.session_state.casino_name} review"
                         final_review = f"{title_line}\n\n{overview_section}\n\n{st.session_state.rewritten_review}"
-                        
+
                         # Fix bullet points before uploading
                         final_review = fix_bullet_points(final_review)
-                        
+
+                        # Add internal links to casino names
+                        st.info("🔗 Adding internal links to comparison casinos...")
+                        final_review = add_internal_links_to_casinos(
+                            final_review,
+                            st.session_state.casino_links_map,
+                            st.session_state.casino_name
+                        )
+
                         # Post to Google Docs
                         st.info("📤 Uploading to Google Drive...")
                         user_creds = get_service_account_credentials()
@@ -922,9 +1032,18 @@ def main():
 
                     # Use original review format - exactly as it was before
                     final_review = f"{st.session_state.casino_name} review\n\n{st.session_state.rewritten_review}"
-                    
+
                     # Fix bullet points before uploading
                     final_review = fix_bullet_points(final_review)
+
+                    # Add internal links to casino names
+                    st.info("🔗 Adding internal links to comparison casinos...")
+                    final_review = add_internal_links_to_casinos(
+                        final_review,
+                        st.session_state.casino_links_map,
+                        st.session_state.casino_name
+                    )
+
                     doc_id = create_google_doc_in_folder(docs_service, drive_service, FOLDER_ID, doc_title, final_review)
                     doc_url = f"https://docs.google.com/document/d/{doc_id}"
                     
@@ -1019,23 +1138,38 @@ def main():
             # Sort comments by section using AI
             progress_placeholder.markdown("## Sorting comments by section...")
             sorted_comments = sort_comments_by_section(comments)
-            
+
+            # Extract casino links from all comparison data
+            print("Extracting casino links from comparison data...")
+            casino_links_map = {}
+            for section_name, section_data in secs.items():
+                # Extract links from top casinos
+                top_links = extract_casino_links_map(section_data.get("top", ""))
+                casino_links_map.update(top_links)
+
+                # Extract links from similar casinos
+                sim_links = extract_casino_links_map(section_data.get("sim", ""))
+                casino_links_map.update(sim_links)
+
+            print(f"Extracted {len(casino_links_map)} unique casino links")
+
             # Generate all sections in parallel
             progress_placeholder.markdown("## Generating review sections in parallel...")
             parallel_results = generate_sections_parallel(casino, secs, sorted_comments, templates, btc_str)
-            
+
             # Combine results
             out = [f"{casino} review\n"] + parallel_results
 
             # Step 2: Rewrite with Adam's voice
             progress_placeholder.markdown("## Rewriting with Adam's voice...")
-            
+
             initial_review = "\n".join(out)
-            
+
             rewritten_review = rewrite_review_with_adam(initial_review)
-            
-            # Step 3: Store rewritten review and prompt for Overview input
+
+            # Step 3: Store rewritten review and casino links, then prompt for Overview input
             st.session_state.rewritten_review = rewritten_review
+            st.session_state.casino_links_map = casino_links_map
             st.session_state.awaiting_overview = True
             st.session_state.casino_name = casino
             
