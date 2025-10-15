@@ -124,14 +124,14 @@ def call_openai(prompt):
     # Add fact constraint system message
     fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
     full_prompt = f"{fact_constraint}\n\n{prompt}"
-    return client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_prompt}], temperature=0.3, max_tokens=800).choices[0].message.content.strip()
+    return client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_prompt}], temperature=0.3, max_tokens=1200).choices[0].message.content.strip()
 
 def call_grok(prompt):
     # Add fact constraint system message
     fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
     full_prompt = f"{fact_constraint}\n\n{prompt}"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {GROK_API_KEY}"}
-    payload = {"model": "grok-3", "messages": [{"role": "user", "content": full_prompt}], "temperature": 0.3, "max_tokens": 800}
+    payload = {"model": "grok-3", "messages": [{"role": "user", "content": full_prompt}], "temperature": 0.3, "max_tokens": 1200}
     j = requests.post("https://api.x.ai/v1/chat/completions", json=payload, headers=headers).json()
     return j.get("choices", [{}])[0].get("message", {}).get("content", "[Grok failed]").strip()
 
@@ -139,7 +139,7 @@ def call_claude(prompt):
     # Add fact constraint system message
     fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
     full_prompt = f"{fact_constraint}\n\n{prompt}"
-    return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=800, temperature=0.3, messages=[{"role": "user", "content": full_prompt}]).content[0].text.strip()
+    return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=1200, temperature=0.3, messages=[{"role": "user", "content": full_prompt}]).content[0].text.strip()
 
 def extract_casino_names_from_data(comparison_data):
     """Extract casino names from comparison data string.
@@ -739,7 +739,7 @@ def generate_section_with_assignment(section_data: Tuple) -> str:
         # Get comments for this specific section
         section_comments = ""
         if sorted_comments.get(sec, "").strip():
-            section_comments = f"\n\nUser feedback: {sorted_comments[sec]}"
+            section_comments = f"\n\nCRITICAL USER FEEDBACK - MUST INCLUDE ALL DETAILS:\n{sorted_comments[sec]}\n\nIMPORTANT: The above user feedback contains specific, detailed information that MUST be included in your review. Do NOT summarize, simplify, or condense this information. Include ALL details, numbers, steps, mechanisms, and specifics exactly as provided. This information is factual and verified - include it comprehensively in the review section."
 
         # Build round-robin instruction for the prompt
         round_robin_instruction = ""
