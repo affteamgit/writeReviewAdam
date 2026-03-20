@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from anthropic import Anthropic
 from pathlib import Path
 import re
+import random
 import concurrent.futures
 from typing import Dict, Tuple
 
@@ -748,13 +749,19 @@ def generate_section_with_assignment(section_data: Tuple) -> str:
             round_robin_instruction = f"\n\nIMPORTANT - Casino Comparison Rotation:\nWhen making comparisons to other casinos in this section, rotate through these casinos from the Top/Similar data in THIS ORDER: '{casinos_str}'.\n\nFor your FIRST comparison, use '{casino_rotation_list[0]}'. For your SECOND comparison, use '{casino_rotation_list[1] if len(casino_rotation_list) > 1 else casino_rotation_list[0]}'. Continue rotating through this list for any additional comparisons. This ensures variety and prevents any single casino from being mentioned too frequently."
             print(f"Section {sec}: Rotation list = {casino_rotation_list}")
 
+        # Shuffle top casino lines so the AI sees a different order each time,
+        # preventing it from always picking the same casino for comparisons
+        top_lines = [l for l in content["top"].split('\n') if l.strip()]
+        random.shuffle(top_lines)
+        shuffled_top = '\n'.join(top_lines)
+
         prompt = prompt_template.format(
             casino=casino,
             section=sec,
             guidelines=guidelines,
             structure=structure,
             main=content["main"] + section_comments,
-            top=content["top"],
+            top=shuffled_top,
             sim=content["sim"],
             btc_value=btc_str
         ) + round_robin_instruction
