@@ -14,7 +14,6 @@ from typing import Dict, Tuple
 
 # CONFIG 
 OPENAI_API_KEY      = st.secrets["OPENAI_API_KEY"]
-GROK_API_KEY        = st.secrets["GROK_API_KEY"]
 ANTHROPIC_API_KEY   = st.secrets["ANTHROPIC_API_KEY"]
 COINMARKETCAP_API_KEY = st.secrets["COINMARKETCAP_API_KEY"]
 
@@ -57,10 +56,10 @@ def get_all_templates():
     """Fetch all templates at once with parallel processing"""
     templates = {}
     files = [
-        'PromptTemplate', 
-        'BaseGuidelinesClaude', 
-        'BaseGuidelinesGrok', 
-        'StructureTemplateGeneral', 
+        'PromptTemplate',
+        'BaseGuidelinesClaude',
+        'BaseGuidelinesResponsible',
+        'StructureTemplateGeneral',
         'StructureTemplatePayments', 
         'StructureTemplateGames', 
         'StructureTemplateResponsible', 
@@ -127,20 +126,11 @@ def call_openai(prompt):
     full_prompt = f"{fact_constraint}\n\n{prompt}"
     return client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": full_prompt}], temperature=0.3, max_tokens=1200).choices[0].message.content.strip()
 
-def call_grok(prompt):
-    # Add fact constraint system message
-    fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
-    full_prompt = f"{fact_constraint}\n\n{prompt}"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {GROK_API_KEY}"}
-    payload = {"model": "grok-3", "messages": [{"role": "user", "content": full_prompt}], "temperature": 0.3, "max_tokens": 1200}
-    j = requests.post("https://api.x.ai/v1/chat/completions", json=payload, headers=headers).json()
-    return j.get("choices", [{}])[0].get("message", {}).get("content", "[Grok failed]").strip()
-
 def call_claude(prompt):
     # Add fact constraint system message
     fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
     full_prompt = f"{fact_constraint}\n\n{prompt}"
-    return anthropic.messages.create(model="claude-sonnet-4-20250514", max_tokens=1200, temperature=0.3, messages=[{"role": "user", "content": full_prompt}]).content[0].text.strip()
+    return anthropic.messages.create(model="claude-sonnet-5", max_tokens=1200, messages=[{"role": "user", "content": full_prompt}]).content[0].text.strip()
 
 def extract_casino_names_from_data(comparison_data):
     """Extract casino names from comparison data string.
@@ -531,8 +521,17 @@ def rewrite_review_with_adam(review_content):
         
         for i, section in enumerate(sections, 1):
             print(f"Processing section {i}/{len(sections)}: {section['title']}")
+
+            # Never hand upstream generation errors to the fine-tuned rewrite model -
+            # it doesn't recognize error text as invalid input and will fabricate a
+            # full plausible-sounding section from it instead of flagging the failure.
+            if section['content'].strip().startswith("[Error"):
+                print(f"Section {section['title']} already failed upstream, skipping rewrite")
+                rewritten_sections.append(f"**{section['title']}**\n{section['content']}")
+                continue
+
             rewritten_content = rewrite_section(section['title'], section['content'])
-            
+
             # If there was an error, still include it to avoid breaking the flow
             if rewritten_content.startswith("[Error rewriting"):
                 print(f"Failed to rewrite {section['title']}, using original content")
@@ -722,7 +721,7 @@ def generate_section_with_assignment(section_data: Tuple) -> str:
         "General": ("BaseGuidelinesClaude", "StructureTemplateGeneral", call_claude),
         "Payments": ("BaseGuidelinesClaude", "StructureTemplatePayments", call_claude),
         "Games": ("BaseGuidelinesClaude", "StructureTemplateGames", call_claude),
-        "Responsible Gambling": ("BaseGuidelinesGrok", "StructureTemplateResponsible", call_grok),
+        "Responsible Gambling": ("BaseGuidelinesResponsible", "StructureTemplateResponsible", call_claude),
         "Bonuses": ("BaseGuidelinesClaude", "StructureTemplateBonuses", call_claude),
     }
 
@@ -1136,7 +1135,7 @@ def main():
             btc_str = f"1 BTC = ${price:,.2f}" if price else "[BTC price unavailable]"
             
             # Check if all required templates were loaded
-            required_templates = ['PromptTemplate', 'BaseGuidelinesClaude', 'BaseGuidelinesGrok']
+            required_templates = ['PromptTemplate', 'BaseGuidelinesClaude', 'BaseGuidelinesResponsible']
             missing_templates = [t for t in required_templates if not templates.get(t)]
             if missing_templates:
                 st.error(f"Error: Could not fetch required templates: {', '.join(missing_templates)}")
@@ -1163,6 +1162,14 @@ def main():
             # Generate all sections in parallel
             progress_placeholder.markdown("## Generating review sections in parallel...")
             parallel_results = generate_sections_parallel(casino, secs, sorted_comments, templates, btc_str)
+
+            # Stop immediately if any section failed to generate - letting a failed
+            # section through would have the rewrite step fabricate content for it
+            failed_sections = [r for r in parallel_results if "\n[Error" in r]
+            if failed_sections:
+                progress_placeholder.empty()
+                st.error(f"❌ {len(failed_sections)} section(s) failed to generate - aborting before rewrite:\n\n" + "\n\n".join(failed_sections))
+                return
 
             # Combine results
             out = [f"{casino} review\n"] + parallel_results
