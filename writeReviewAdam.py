@@ -130,7 +130,8 @@ def call_claude(prompt):
     # Add fact constraint system message
     fact_constraint = "CRITICAL: Only use facts explicitly provided in the prompt. Never add information not in the source data. Do not make assumptions or add general knowledge about casinos."
     full_prompt = f"{fact_constraint}\n\n{prompt}"
-    return anthropic.messages.create(model="claude-sonnet-5", max_tokens=1200, messages=[{"role": "user", "content": full_prompt}]).content[0].text.strip()
+    response = anthropic.messages.create(model="claude-sonnet-5", max_tokens=1200, thinking={"type": "disabled"}, messages=[{"role": "user", "content": full_prompt}])
+    return next(block.text for block in response.content if block.type == "text").strip()
 
 def extract_casino_names_from_data(comparison_data):
     """Extract casino names from comparison data string.
