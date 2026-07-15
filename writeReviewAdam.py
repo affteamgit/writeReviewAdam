@@ -924,7 +924,8 @@ def main():
         
         # Show the completed review for reference
         with st.expander("📖 View Completed Review (for reference)", expanded=False):
-            st.markdown(st.session_state.rewritten_review)
+            # Escape $ so Streamlit doesn't parse dollar amounts as LaTeX math delimiters
+            st.markdown(st.session_state.rewritten_review.replace("$", "\\$"))
         
         st.markdown("### Add Overview Section")
         st.markdown("Please provide a keyword and main points for the introduction:")
@@ -954,7 +955,9 @@ def main():
         if st.session_state.tldr_points:
             st.markdown("**Choose TLDR bullet points to include:**")
             for i, point in enumerate(st.session_state.tldr_points):
-                if st.checkbox(point, key=f"tldr_{i}", value=True):  # Default to checked
+                # Escape $ so Streamlit doesn't parse dollar amounts as LaTeX math delimiters
+                display_point = point.replace("$", "\\$")
+                if st.checkbox(display_point, key=f"tldr_{i}", value=True):  # Default to checked
                     selected_tldr_points.append(point)
         else:
             # Button to generate TLDR points
